@@ -1,5 +1,5 @@
-const Router = require('koa-router');
-const authMiddleware = require('../middleware/auth');
+const Router = require('@koa/router');
+const { authMiddleware } = require('../middleware/auth');
 
 // 导入控制器
 const register = require('../modules/auth/register');
