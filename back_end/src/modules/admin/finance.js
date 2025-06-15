@@ -4,9 +4,96 @@ const { createLogger } = require('../../middleware/logger');
 const logger = createLogger('AdminFinance');
 
 /**
- * 获取支付记录列表
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/admin/payments:
+ *   get:
+ *     summary: 获取支付记录列表
+ *     description: 获取系统中的支付记录，支持多种过滤条件和分页
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *         default: 1
+ *         description: 页码
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *         default: 10
+ *         description: 每页记录数
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [pending, completed, failed]
+ *         description: 支付状态
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: 开始日期 (YYYY-MM-DD)
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: 结束日期 (YYYY-MM-DD)
+ *       - in: query
+ *         name: customer
+ *         schema:
+ *           type: string
+ *         description: 客户ID或姓名
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *           enum: [repair, deposit, refund]
+ *         description: 支付类型
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     payments:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                     summary:
+ *                       type: object
+ *                       properties:
+ *                         totalAmount:
+ *                           type: number
+ *                         refundAmount:
+ *                           type: number
+ *                         pendingAmount:
+ *                           type: number
+ *                         completedCount:
+ *                           type: integer
+ *                         pendingCount:
+ *                           type: integer
+ *                         refundCount:
+ *                           type: integer
+ *                     pagination:
+ *                       type: object
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器错误
  */
 const getPayments = async (ctx) => {
   const { page = 1, limit = 10, status, startDate, endDate, customer, type } = ctx.query;
@@ -207,9 +294,96 @@ const getPayments = async (ctx) => {
 };
 
 /**
- * 获取工资单列表
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/admin/payroll:
+ *   get:
+ *     summary: 获取工资单列表
+ *     description: 获取系统中的工资单记录，支持按月份、年份、技师和状态过滤
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *         default: 1
+ *         description: 页码
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *         default: 10
+ *         description: 每页记录数
+ *       - in: query
+ *         name: month
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 12
+ *         description: 月份（1-12）
+ *       - in: query
+ *         name: year
+ *         schema:
+ *           type: integer
+ *           minimum: 2000
+ *           maximum: 2100
+ *         description: 年份
+ *       - in: query
+ *         name: mechanic
+ *         schema:
+ *           type: string
+ *         description: 技师ID或姓名
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [pending, paid]
+ *         description: 工资单状态
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     payroll:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                     summary:
+ *                       type: object
+ *                       properties:
+ *                         totalPayroll:
+ *                           type: number
+ *                         averagePayroll:
+ *                           type: number
+ *                         totalBasicSalary:
+ *                           type: number
+ *                         totalCommission:
+ *                           type: number
+ *                         totalBonuses:
+ *                           type: number
+ *                         totalDeductions:
+ *                           type: number
+ *                         paidCount:
+ *                           type: integer
+ *                         pendingCount:
+ *                           type: integer
+ *                     pagination:
+ *                       type: object
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器错误
  */
 const getPayroll = async (ctx) => {
   const { page = 1, limit = 10, month, year, mechanic, status } = ctx.query;

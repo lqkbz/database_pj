@@ -1,11 +1,61 @@
-const { createLogger } = require('../../../middleware/logger');
+const { createLogger } = require('../../middleware/logger');
 
 const logger = createLogger('AdminReports');
 
 /**
- * 获取未完成工单统计报表
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/admin/unfinished-orders:
+ *   get:
+ *     summary: 获取未完成工单统计报表
+ *     description: 获取当前未完成工单的统计数据和分析
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: query
+ *         name: overdueDays
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *         description: 筛选超过指定天数的逾期工单
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     totalActiveOrders:
+ *                       type: integer
+ *                     statusBreakdown:
+ *                       type: object
+ *                     overdueOrders:
+ *                       type: integer
+ *                     overdueRate:
+ *                       type: number
+ *                     averageWaitTime:
+ *                       type: object
+ *                     ordersByPriority:
+ *                       type: array
+ *                     ordersByMechanic:
+ *                       type: array
+ *                     ordersByServiceType:
+ *                       type: array
+ *                     bottlenecks:
+ *                       type: array
+ *                     mostOverdueOrders:
+ *                       type: array
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器错误
  */
 const getUnfinishedOrdersStats = async (ctx) => {
   const { overdueDays } = ctx.query;

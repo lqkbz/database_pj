@@ -4,9 +4,68 @@ const { createLogger } = require('../../middleware/logger');
 const logger = createLogger('AdminMechanicManagement');
 
 /**
- * 获取所有技师列表
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/admin/mechanics:
+ *   get:
+ *     summary: 获取所有技师列表
+ *     description: 获取系统中所有技师的列表，支持分页、搜索和过滤
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *         default: 1
+ *         description: 页码
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *         default: 10
+ *         description: 每页记录数
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: 搜索关键词（技师姓名、电话、邮箱等）
+ *       - in: query
+ *         name: specialty
+ *         schema:
+ *           type: string
+ *         description: 按专业领域筛选
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [active, inactive, suspended]
+ *         description: 技师状态
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     mechanics:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                     pagination:
+ *                       type: object
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器错误
  */
 const listMechanics = async (ctx) => {
   const { page = 1, limit = 10, search, specialty, status } = ctx.query;
@@ -90,9 +149,41 @@ const listMechanics = async (ctx) => {
 };
 
 /**
- * 获取技师详情
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/admin/mechanics/{id}:
+ *   get:
+ *     summary: 获取技师详情
+ *     description: 获取指定技师的详细信息，包括基本信息、当前工单、近期完成工单等
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 技师ID
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     mechanic:
+ *                       type: object
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 技师不存在
+ *       500:
+ *         description: 服务器错误
  */
 const getMechanicDetail = async (ctx) => {
   const mechanicId = ctx.params.id;
@@ -183,9 +274,80 @@ const getMechanicDetail = async (ctx) => {
 };
 
 /**
- * 创建新技师
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/admin/mechanics:
+ *   post:
+ *     summary: 创建新技师
+ *     description: 在系统中创建一个新的技师账号
+ *     tags: [Admin]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - phone
+ *               - email
+ *               - specialties
+ *               - qualification
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 description: 技师姓名
+ *               phone:
+ *                 type: string
+ *                 description: 手机号码
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: 电子邮箱
+ *               specialties:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: 专业领域
+ *               qualification:
+ *                 type: string
+ *                 description: 资质/职称
+ *               certification:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: 认证证书
+ *               experience:
+ *                 type: integer
+ *                 description: 工作年限
+ *               workingHours:
+ *                 type: object
+ *                 description: 工作时间安排
+ *     responses:
+ *       201:
+ *         description: 创建成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     mechanic:
+ *                       type: object
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       409:
+ *         description: 资源冲突（如邮箱或手机号已存在）
+ *       500:
+ *         description: 服务器错误
  */
 const createMechanic = async (ctx) => {
   const mechanicData = ctx.request.body;
@@ -257,9 +419,88 @@ const createMechanic = async (ctx) => {
 };
 
 /**
- * 更新技师信息
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/admin/mechanics/{id}:
+ *   put:
+ *     summary: 更新技师信息
+ *     description: 更新指定技师的信息
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 技师ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 description: 技师姓名
+ *               phone:
+ *                 type: string
+ *                 description: 手机号码
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: 电子邮箱
+ *               specialties:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: 专业领域
+ *               qualification:
+ *                 type: string
+ *                 description: 资质/职称
+ *               certification:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: 认证证书
+ *               status:
+ *                 type: string
+ *                 enum: [active, inactive, suspended]
+ *                 description: 技师状态
+ *               workingHours:
+ *                 type: object
+ *                 description: 工作时间安排
+ *     responses:
+ *       200:
+ *         description: 更新成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     mechanicId:
+ *                       type: string
+ *                     updatedFields:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 技师不存在
+ *       409:
+ *         description: 资源冲突（如邮箱或手机号已被其他用户使用）
+ *       500:
+ *         description: 服务器错误
  */
 const updateMechanic = async (ctx) => {
   const mechanicId = ctx.params.id;
@@ -333,9 +574,40 @@ const updateMechanic = async (ctx) => {
 };
 
 /**
- * 删除技师
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/admin/mechanics/{id}:
+ *   delete:
+ *     summary: 删除技师
+ *     description: 从系统中删除指定的技师，仅当技师没有进行中的工单时才能删除
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 技师ID
+ *     responses:
+ *       200:
+ *         description: 删除成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 技师不存在
+ *       409:
+ *         description: 冲突（如技师有未完成的工单）
+ *       500:
+ *         description: 服务器错误
  */
 const deleteMechanic = async (ctx) => {
   const mechanicId = ctx.params.id;

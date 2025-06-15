@@ -4,9 +4,68 @@ const { createLogger } = require('../../middleware/logger');
 const logger = createLogger('AdminInventory');
 
 /**
- * 获取所有零部件列表
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/admin/parts:
+ *   get:
+ *     summary: 获取所有零部件列表
+ *     description: 获取系统中所有零部件的列表，支持分页、搜索和过滤
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *         default: 1
+ *         description: 页码
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *         default: 10
+ *         description: 每页记录数
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: 搜索关键词（零部件名称、编号等）
+ *       - in: query
+ *         name: category
+ *         schema:
+ *           type: string
+ *         description: 零部件类别
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [active, inactive, low_stock, out_of_stock]
+ *         description: 零部件状态
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     parts:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                     pagination:
+ *                       type: object
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器错误
  */
 const listParts = async (ctx) => {
   const { page = 1, limit = 10, search, category, status } = ctx.query;
@@ -126,9 +185,41 @@ const listParts = async (ctx) => {
 };
 
 /**
- * 获取零部件详情
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/admin/parts/{id}:
+ *   get:
+ *     summary: 获取零部件详情
+ *     description: 获取指定零部件的详细信息，包括基本信息、库存历史等
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 零部件ID
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     part:
+ *                       type: object
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 零部件不存在
+ *       500:
+ *         description: 服务器错误
  */
 const getPartDetail = async (ctx) => {
   const partId = ctx.params.id;

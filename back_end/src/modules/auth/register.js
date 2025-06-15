@@ -1,3 +1,83 @@
+/**
+ * @swagger
+ * /auth/register:
+ *   post:
+ *     summary: 用户注册
+ *     description: 创建新用户账号
+ *     tags: [auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - username
+ *               - email
+ *               - password
+ *               - confirmPassword
+ *             properties:
+ *               username:
+ *                 type: string
+ *                 description: 用户名
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: 电子邮箱
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 description: 密码
+ *               confirmPassword:
+ *                 type: string
+ *                 format: password
+ *                 description: 确认密码
+ *               fullName:
+ *                 type: string
+ *                 description: 姓名
+ *               phone:
+ *                 type: string
+ *                 description: 电话号码
+ *     responses:
+ *       201:
+ *         description: 注册成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *                   example: 注册成功
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       description: 用户ID
+ *                     username:
+ *                       type: string
+ *                       description: 用户名
+ *                     email:
+ *                       type: string
+ *                       description: 电子邮箱
+ *                     role:
+ *                       type: string
+ *                       description: 用户角色
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                       description: 创建时间
+ *       400:
+ *         description: 请求参数错误
+ *       409:
+ *         description: 用户名或邮箱已被注册
+ *       500:
+ *         description: 服务器错误
+ */
 const { validateRegistration } = require('../../utils/validator');
 const bcrypt = require('bcrypt');
 const { createError } = require('../../middleware/errorhandler');

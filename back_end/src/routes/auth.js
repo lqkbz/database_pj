@@ -1,21 +1,22 @@
-const Router = require('@koa/router');
-const { authMiddleware } = require('../middleware/auth');
+const Router = require('koa-router');
+const router = new Router({ prefix: '/api/auth' });
 
-// 导入控制器
+// Import auth modules
+const { login } = require('../modules/auth/login');
 const register = require('../modules/auth/register');
-const login = require('../modules/auth/login');
-const refresh = require('../modules/auth/refresh');
 const profile = require('../modules/auth/profile');
+const refresh = require('../modules/auth/refresh');
 
-// 创建路由实例
-const router = new Router({
-  prefix: '/api/v1/auth'
-});
-
-// 注册路由
-router.post('/register', register);
+// Login route
 router.post('/login', login);
+
+// Register route
+router.post('/register', register);
+
+// Profile route (protected route that requires authentication)
+router.get('/profile', profile);
+
+// Token refresh route
 router.post('/refresh', refresh);
-router.get('/profile', authMiddleware, profile);
 
 module.exports = router;

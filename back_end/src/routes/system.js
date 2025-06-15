@@ -1,16 +1,30 @@
-const Router = require('@koa/router');
-const system = require('../modules/system');
+const Router = require('koa-router');
+const router = new Router({ prefix: '/api/system' });
 
-// 创建路由实例
-const router = new Router({
-  prefix: '/api/v1'
-});
+// Import system modules
+const { 
+  healthCheck,
+  getOpenApiSpec,
+  getSwaggerUI,
+  generateOpenApiSpec,
+  createStaticMiddleware
+} = require('../modules/system');
 
-// 健康检查路由
-router.get('/healthz', system.healthCheck);
+// Health check route
+router.get('/health', healthCheck);
 
-// API文档路由
-router.get('/openapi.json', system.getOpenApiSpec);
-router.get('/docs', system.getSwaggerUI);
+// API documentation routes
+router.get('/docs/openapi.json', getOpenApiSpec);
+router.get('/docs/swagger', getSwaggerUI);
+router.post('/docs/generate', generateOpenApiSpec);
 
-module.exports = router; 
+// Note: Static middleware is typically applied at the app level, not as a route
+// It would be applied in the main app.js file like:
+// app.use(createStaticMiddleware());
+// But we'll include a reference here for completeness
+
+module.exports = {
+  router,
+  // Export middleware for use in main app
+  staticMiddleware: createStaticMiddleware
+};

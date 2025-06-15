@@ -4,9 +4,91 @@ const { createLogger } = require('../../middleware/logger');
 const logger = createLogger('WorkOrders');
 
 /**
- * 获取当前客户的所有工单
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/customers/work-orders:
+ *   get:
+ *     summary: 获取当前客户的所有工单
+ *     description: 获取当前登录客户的所有维修工单，支持分页和状态筛选
+ *     tags: [Customers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [pending, accepted, in_progress, completed, cancelled]
+ *         description: 工单状态过滤
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: 页码
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: 每页记录数
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     workOrders:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                           vehicleId:
+ *                             type: string
+ *                           vehicleInfo:
+ *                             type: object
+ *                           description:
+ *                             type: string
+ *                           status:
+ *                             type: string
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *                           estimatedCompletionTime:
+ *                             type: string
+ *                             format: date-time
+ *                           mechanicId:
+ *                             type: string
+ *                           mechanicName:
+ *                             type: string
+ *                           priority:
+ *                             type: string
+ *                           totalCost:
+ *                             type: number
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         page:
+ *                           type: integer
+ *                         limit:
+ *                           type: integer
+ *                         total:
+ *                           type: integer
+ *                         pages:
+ *                           type: integer
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器错误
  */
 const getMyWorkOrders = async (ctx) => {
   const { user } = ctx.state;
@@ -76,9 +158,73 @@ const getMyWorkOrders = async (ctx) => {
 };
 
 /**
- * 创建新工单
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/customers/work-orders:
+ *   post:
+ *     summary: 创建新工单
+ *     description: 为当前登录客户创建新的维修工单
+ *     tags: [Customers]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - vehicleId
+ *               - description
+ *             properties:
+ *               vehicleId:
+ *                 type: string
+ *                 description: 车辆ID
+ *               description:
+ *                 type: string
+ *                 description: 问题描述
+ *               preferredTime:
+ *                 type: string
+ *                 format: date-time
+ *                 description: 期望服务时间
+ *               additionalNotes:
+ *                 type: string
+ *                 description: 额外说明
+ *               priority:
+ *                 type: string
+ *                 enum: [low, normal, high, urgent]
+ *                 default: normal
+ *                 description: 优先级
+ *     responses:
+ *       201:
+ *         description: 创建成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *                   example: 工单创建成功
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     workOrder:
+ *                       type: object
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       403:
+ *         description: 无权为该车辆创建工单
+ *       404:
+ *         description: 未找到车辆
+ *       409:
+ *         description: 车辆已有类似的未完成工单
+ *       500:
+ *         description: 服务器错误
  */
 const createWorkOrder = async (ctx) => {
   const { user } = ctx.state;
@@ -151,9 +297,76 @@ const createWorkOrder = async (ctx) => {
 };
 
 /**
- * 获取工单详情
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/customers/work-orders/{id}:
+ *   get:
+ *     summary: 获取工单详情
+ *     description: 获取指定工单的详细信息
+ *     tags: [Customers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 工单ID
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     workOrder:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                         userId:
+ *                           type: string
+ *                         vehicleId:
+ *                           type: string
+ *                         vehicleInfo:
+ *                           type: object
+ *                         description:
+ *                           type: string
+ *                         status:
+ *                           type: string
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *                         estimatedCompletionTime:
+ *                           type: string
+ *                           format: date-time
+ *                         mechanicInfo:
+ *                           type: object
+ *                         priority:
+ *                           type: string
+ *                         progressUpdates:
+ *                           type: array
+ *                         materials:
+ *                           type: array
+ *                         laborCost:
+ *                           type: number
+ *                         totalCost:
+ *                           type: number
+ *       401:
+ *         description: 未授权
+ *       403:
+ *         description: 无权查看该工单
+ *       404:
+ *         description: 未找到工单
+ *       500:
+ *         description: 服务器错误
  */
 const getWorkOrderById = async (ctx) => {
   const { user } = ctx.state;
@@ -231,9 +444,77 @@ const getWorkOrderById = async (ctx) => {
 };
 
 /**
- * 为工单添加评价
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/customers/work-orders/{id}/feedback:
+ *   post:
+ *     summary: 为工单添加评价
+ *     description: 为已完成的工单添加评价和评分
+ *     tags: [Customers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 工单ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - rating
+ *             properties:
+ *               rating:
+ *                 type: integer
+ *                 minimum: 1
+ *                 maximum: 5
+ *                 description: 评分(1-5)
+ *               comment:
+ *                 type: string
+ *                 description: 评价内容
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *                   example: 评价添加成功
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     feedback:
+ *                       type: object
+ *                       properties:
+ *                         rating:
+ *                           type: integer
+ *                         comment:
+ *                           type: string
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       403:
+ *         description: 无权为该工单添加评价
+ *       404:
+ *         description: 未找到工单
+ *       409:
+ *         description: 该工单已有评价
+ *       500:
+ *         description: 服务器错误
  */
 const addWorkOrderFeedback = async (ctx) => {
   const { user } = ctx.state;
@@ -294,9 +575,62 @@ const addWorkOrderFeedback = async (ctx) => {
 };
 
 /**
- * 催促工单
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/customers/work-orders/{id}/urge:
+ *   post:
+ *     summary: 催促工单
+ *     description: 催促技师尽快完成工单
+ *     tags: [Customers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 工单ID
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               message:
+ *                 type: string
+ *                 description: 催促留言
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *                   example: 催促成功，已通知技师
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     urgeRecord:
+ *                       type: object
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       403:
+ *         description: 无权催促该工单
+ *       404:
+ *         description: 未找到工单
+ *       429:
+ *         description: 请求过于频繁
+ *       500:
+ *         description: 服务器错误
  */
 const urgeWorkOrder = async (ctx) => {
   const { user } = ctx.state;

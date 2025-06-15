@@ -1,3 +1,51 @@
+/**
+ * @swagger
+ * /auth/refresh:
+ *   post:
+ *     summary: 刷新访问令牌
+ *     description: 使用刷新令牌生成新的访问令牌
+ *     tags: [auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - refreshToken
+ *             properties:
+ *               refreshToken:
+ *                 type: string
+ *                 description: 刷新令牌
+ *     responses:
+ *       200:
+ *         description: 令牌刷新成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *                   example: 令牌刷新成功
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     accessToken:
+ *                       type: string
+ *                       description: 新的访问令牌
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 无效的刷新令牌
+ *       404:
+ *         description: 用户不存在
+ *       500:
+ *         description: 服务器错误
+ */
 const { verifyToken, generateToken } = require('../../utils/jwt');
 const { createError } = require('../../middleware/errorhandler');
 

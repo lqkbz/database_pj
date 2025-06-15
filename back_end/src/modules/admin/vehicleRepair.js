@@ -1,11 +1,81 @@
-const { createLogger } = require('../../../middleware/logger');
+const { createLogger } = require('../../middleware/logger');
 
 const logger = createLogger('AdminReports');
 
 /**
- * 获取车辆维修统计报表
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/admin/vehicle-repair:
+ *   get:
+ *     summary: 获取车辆维修统计报表
+ *     description: 获取指定时间范围内的车辆维修统计数据
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: query
+ *         name: timeRange
+ *         schema:
+ *           type: string
+ *           enum: [day, week, month, year]
+ *         default: month
+ *         description: 时间范围
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: 开始日期 (YYYY-MM-DD)
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: 结束日期 (YYYY-MM-DD)
+ *       - in: query
+ *         name: make
+ *         schema:
+ *           type: string
+ *         description: 车辆品牌
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     timeRange:
+ *                       type: string
+ *                     startDate:
+ *                       type: string
+ *                     endDate:
+ *                       type: string
+ *                     totalRepairs:
+ *                       type: number
+ *                     vehicleCount:
+ *                       type: number
+ *                     averageRepairsPerVehicle:
+ *                       type: number
+ *                     repairsByMake:
+ *                       type: array
+ *                     repairsByVehicleAge:
+ *                       type: array
+ *                     mostCommonIssues:
+ *                       type: array
+ *                     repairTrend:
+ *                       type: array
+ *                     seasonalFactors:
+ *                       type: object
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器错误
  */
 const getVehicleRepairStats = async (ctx) => {
   const { timeRange = 'month', startDate, endDate, make } = ctx.query;

@@ -4,9 +4,62 @@ const { createLogger } = require('../../middleware/logger');
 const logger = createLogger('AdminUserManagement');
 
 /**
- * 获取所有用户列表
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /admin/users:
+ *   get:
+ *     summary: 获取用户列表
+ *     description: 管理员获取系统中所有用户的列表
+ *     tags: [admin]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: 页码
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: 每页数量
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: 搜索关键词
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [active, inactive]
+ *         description: 用户状态过滤
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 成功获取用户列表
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     users:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/User'
+ *                     pagination:
+ *                       $ref: '#/components/schemas/Pagination'
+ *       401:
+ *         description: 未授权
+ *       403:
+ *         description: 无权访问
  */
 const listUsers = async (ctx) => {
   const { page = 1, limit = 10, search, status } = ctx.query;
@@ -83,9 +136,43 @@ const listUsers = async (ctx) => {
 };
 
 /**
- * 获取用户详情
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /admin/users/{id}:
+ *   get:
+ *     summary: 获取用户详情
+ *     description: 管理员获取指定用户的详细信息
+ *     tags: [admin]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 用户ID
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 成功获取用户详情
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user:
+ *                       $ref: '#/components/schemas/UserDetail'
+ *       401:
+ *         description: 未授权
+ *       403:
+ *         description: 无权访问
+ *       404:
+ *         description: 用户不存在
  */
 const getUserDetail = async (ctx) => {
   const userId = ctx.params.id;
@@ -152,9 +239,73 @@ const getUserDetail = async (ctx) => {
 };
 
 /**
- * 更新用户信息
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /admin/users/{id}:
+ *   patch:
+ *     summary: 更新用户信息
+ *     description: 管理员更新指定用户的信息
+ *     tags: [admin]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 用户ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               fullName:
+ *                 type: string
+ *                 description: 用户全名
+ *               phone:
+ *                 type: string
+ *                 description: 电话号码
+ *               address:
+ *                 type: string
+ *                 description: 地址
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: 电子邮件
+ *               status:
+ *                 type: string
+ *                 enum: [active, inactive, suspended]
+ *                 description: 用户状态
+ *               role:
+ *                 type: string
+ *                 enum: [customer, mechanic, admin]
+ *                 description: 用户角色
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 成功更新用户信息
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user:
+ *                       $ref: '#/components/schemas/User'
+ *       400:
+ *         description: 无效的请求数据
+ *       401:
+ *         description: 未授权
+ *       403:
+ *         description: 无权访问
+ *       404:
+ *         description: 用户不存在
  */
 const updateUser = async (ctx) => {
   const userId = ctx.params.id;
@@ -199,14 +350,17 @@ const updateUser = async (ctx) => {
   // 更新用户信息（在数据库中）
   // 实际项目中替换为数据库更新操作
   
+  // 记录信息
   logger.info(`管理员更新了用户 ${userId} 的信息`);
   
   ctx.body = {
     status: 'success',
     message: '用户信息已更新',
     data: {
-      userId,
-      updatedFields: Object.keys(updates)
+      user: {
+        ...user,
+        ...updates
+      }
     }
   };
 };

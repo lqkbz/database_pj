@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs').promises;
 const { createLogger } = require('../../middleware/logger');
+const { generateApiSpec } = require('../../utils/apiDocs');
 
 const logger = createLogger('System');
 
@@ -11,15 +12,16 @@ const logger = createLogger('System');
  */
 const getOpenApiSpec = async (ctx) => {
   try {
-    // 从文件中读取OpenAPI规范
-    const openApiPath = path.join(__dirname, '../../../docs/openapi.json');
-    const openApiContent = await fs.readFile(openApiPath, 'utf8');
-    const openApiSpec = JSON.parse(openApiContent);
+    // 动态生成OpenAPI规范而不是从文件读取
+    const openApiSpec = generateApiSpec();
     
     // 添加服务器信息
     const baseUrl = `${ctx.protocol}://${ctx.host}`;
     if (!openApiSpec.servers) {
       openApiSpec.servers = [{ url: baseUrl }];
+    } else {
+      // 更新第一个服务器的URL为当前请求的URL
+      openApiSpec.servers[0].url = baseUrl + '/api/v1';
     }
     
     logger.info('OpenAPI规范已请求');
@@ -65,7 +67,41 @@ const getSwaggerUI = async (ctx) => {
   }
 };
 
+/**
+ * 生成并保存OpenAPI规范
+ * 
+ * @param {Object} ctx - Koa上下文
+ */
+const generateOpenApiSpec = async (ctx) => {
+  try {
+    const apiDocs = require('../../utils/apiDocs');
+    const openApiSpec = apiDocs.generateApiSpec();
+    const success = await apiDocs.saveApiSpecToFile(openApiSpec);
+    
+    if (success) {
+      ctx.body = {
+        status: 'success',
+        message: 'OpenAPI规范已生成并保存'
+      };
+    } else {
+      ctx.status = 500;
+      ctx.body = {
+        status: 'error',
+        message: '生成OpenAPI规范失败'
+      };
+    }
+  } catch (err) {
+    logger.error(`生成OpenAPI规范失败: ${err.message}`);
+    ctx.status = 500;
+    ctx.body = {
+      status: 'error',
+      message: '生成OpenAPI规范失败'
+    };
+  }
+};
+
 module.exports = {
   getOpenApiSpec,
-  getSwaggerUI
+  getSwaggerUI,
+  generateOpenApiSpec
 }; 

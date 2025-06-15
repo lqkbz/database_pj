@@ -1,0 +1,55 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "车辆维修管理系统 API",
+    "description": "车辆维修管理系统的RESTful API文档",
+    "version": "1.0.0",
+    "contact": {
+      "name": "API Support",
+      "email": "support@example.com"
+    }
+  },
+  "servers": [
+    {
+      "url": "/api/v1",
+      "description": "本地开发服务器"
+    }
+  ],
+  "tags": [
+    {
+      "name": "auth",
+      "description": "认证相关接口"
+    },
+    {
+      "name": "users",
+      "description": "用户管理相关接口"
+    },
+    {
+      "name": "vehicles",
+      "description": "车辆管理相关接口"
+    },
+    {
+      "name": "work-orders",
+      "description": "工单管理相关接口"
+    },
+    {
+      "name": "admin",
+      "description": "管理员相关接口"
+    },
+    {
+      "name": "system",
+      "description": "系统相关接口"
+    }
+  ],
+  "paths": {},
+  "components": {
+    "schemas": {},
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+} 

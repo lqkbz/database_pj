@@ -1,3 +1,71 @@
+/**
+ * @swagger
+ * /auth/profile:
+ *   get:
+ *     summary: 获取用户个人资料
+ *     description: 获取当前已认证用户的个人资料信息
+ *     tags: [auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 成功获取用户资料
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           description: 用户ID
+ *                         username:
+ *                           type: string
+ *                           description: 用户名
+ *                         email:
+ *                           type: string
+ *                           description: 电子邮箱
+ *                         role:
+ *                           type: string
+ *                           description: 用户角色
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *                           description: 创建时间
+ *                         lastLogin:
+ *                           type: string
+ *                           format: date-time
+ *                           description: 最后登录时间
+ *                         profile:
+ *                           type: object
+ *                           properties:
+ *                             fullName:
+ *                               type: string
+ *                               description: 姓名
+ *                             avatar:
+ *                               type: string
+ *                               description: 头像URL
+ *                             bio:
+ *                               type: string
+ *                               description: 个人简介
+ *                             phone:
+ *                               type: string
+ *                               description: 电话号码
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 用户不存在
+ *       500:
+ *         description: 服务器错误
+ */
 const { createError } = require('../../middleware/errorhandler');
 
 /**

@@ -1,11 +1,78 @@
-const { createLogger } = require('../../../middleware/logger');
+const { createLogger } = require('../../middleware/logger');
 
 const logger = createLogger('AdminReports');
 
 /**
- * 获取工种工作量统计报表
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/admin/trade-workload:
+ *   get:
+ *     summary: 获取工种工作量统计报表
+ *     description: 获取指定时间范围内的工种工作量统计数据
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: query
+ *         name: timeRange
+ *         schema:
+ *           type: string
+ *           enum: [day, week, month, year]
+ *         default: month
+ *         description: 时间范围
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: 开始日期 (YYYY-MM-DD)
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: 结束日期 (YYYY-MM-DD)
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     timeRange:
+ *                       type: string
+ *                     startDate:
+ *                       type: string
+ *                     endDate:
+ *                       type: string
+ *                     totalOrders:
+ *                       type: number
+ *                     completedOrders:
+ *                       type: number
+ *                     inProgressOrders:
+ *                       type: number
+ *                     workloadByTradeType:
+ *                       type: array
+ *                     mechanicSpecialties:
+ *                       type: array
+ *                     capacityUtilization:
+ *                       type: array
+ *                     highDemandSkills:
+ *                       type: array
+ *                     schedulingEfficiency:
+ *                       type: object
+ *                     workloadTrend:
+ *                       type: array
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器错误
  */
 const getTradeWorkloadStats = async (ctx) => {
   const { timeRange = 'month', startDate, endDate } = ctx.query;

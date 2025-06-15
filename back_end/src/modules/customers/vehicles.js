@@ -4,9 +4,58 @@ const { createLogger } = require('../../middleware/logger');
 const logger = createLogger('Vehicles');
 
 /**
- * 获取当前客户的所有车辆
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/customers/vehicles:
+ *   get:
+ *     summary: 获取当前客户的所有车辆
+ *     description: 获取当前登录客户的所有车辆信息
+ *     tags: [Customers]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     vehicles:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                           make:
+ *                             type: string
+ *                           model:
+ *                             type: string
+ *                           year:
+ *                             type: integer
+ *                           licensePlate:
+ *                             type: string
+ *                           vin:
+ *                             type: string
+ *                           mileage:
+ *                             type: integer
+ *                           lastMaintenanceDate:
+ *                             type: string
+ *                             format: date
+ *                           status:
+ *                             type: string
+ *                     total:
+ *                       type: integer
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器错误
  */
 const getMyVehicles = async (ctx) => {
   const { user } = ctx.state;
@@ -48,9 +97,82 @@ const getMyVehicles = async (ctx) => {
 };
 
 /**
- * 添加新车辆
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/customers/vehicles:
+ *   post:
+ *     summary: 添加新车辆
+ *     description: 为当前登录客户添加新的车辆
+ *     tags: [Customers]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - make
+ *               - model
+ *               - year
+ *               - licensePlate
+ *               - vin
+ *             properties:
+ *               make:
+ *                 type: string
+ *                 description: 车辆品牌
+ *               model:
+ *                 type: string
+ *                 description: 车辆型号
+ *               year:
+ *                 type: integer
+ *                 description: 车辆年份
+ *               licensePlate:
+ *                 type: string
+ *                 description: 车牌号
+ *               vin:
+ *                 type: string
+ *                 description: 车辆识别号(VIN)
+ *               mileage:
+ *                 type: integer
+ *                 description: 当前里程数
+ *               color:
+ *                 type: string
+ *                 description: 车辆颜色
+ *               engineNumber:
+ *                 type: string
+ *                 description: 发动机编号
+ *               purchaseDate:
+ *                 type: string
+ *                 format: date
+ *                 description: 购买日期
+ *     responses:
+ *       201:
+ *         description: 创建成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *                   example: 车辆添加成功
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     vehicle:
+ *                       type: object
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       409:
+ *         description: 车牌号或VIN码已存在
+ *       500:
+ *         description: 服务器错误
  */
 const addVehicle = async (ctx) => {
   const { user } = ctx.state;
@@ -101,9 +223,45 @@ const addVehicle = async (ctx) => {
 };
 
 /**
- * 获取车辆详情
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/customers/vehicles/{id}:
+ *   get:
+ *     summary: 获取车辆详情
+ *     description: 获取指定车辆的详细信息
+ *     tags: [Customers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 车辆ID
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     vehicle:
+ *                       type: object
+ *       401:
+ *         description: 未授权
+ *       403:
+ *         description: 无权访问
+ *       404:
+ *         description: 车辆不存在
+ *       500:
+ *         description: 服务器错误
  */
 const getVehicleById = async (ctx) => {
   const { user } = ctx.state;
@@ -160,9 +318,76 @@ const getVehicleById = async (ctx) => {
 };
 
 /**
- * 更新车辆信息
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/customers/vehicles/{id}:
+ *   put:
+ *     summary: 更新车辆信息
+ *     description: 更新指定车辆的信息
+ *     tags: [Customers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 车辆ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               mileage:
+ *                 type: integer
+ *                 description: 当前里程数
+ *               color:
+ *                 type: string
+ *                 description: 车辆颜色
+ *               notes:
+ *                 type: string
+ *                 description: 备注信息
+ *               lastMaintenanceDate:
+ *                 type: string
+ *                 format: date
+ *                 description: 最近保养日期
+ *               insuranceExpiry:
+ *                 type: string
+ *                 format: date
+ *                 description: 保险到期日
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *                   example: 车辆信息已更新
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     updatedFields:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       403:
+ *         description: 无权修改
+ *       404:
+ *         description: 车辆不存在
+ *       500:
+ *         description: 服务器错误
  */
 const updateVehicle = async (ctx) => {
   const { user } = ctx.state;
@@ -217,9 +442,45 @@ const updateVehicle = async (ctx) => {
 };
 
 /**
- * 删除车辆
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/customers/vehicles/{id}:
+ *   delete:
+ *     summary: 删除车辆
+ *     description: 删除指定的车辆
+ *     tags: [Customers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 车辆ID
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *                   example: 车辆已删除
+ *       401:
+ *         description: 未授权
+ *       403:
+ *         description: 无权删除
+ *       404:
+ *         description: 车辆不存在
+ *       409:
+ *         description: 车辆有未完成的工单
+ *       500:
+ *         description: 服务器错误
  */
 const deleteVehicle = async (ctx) => {
   const { user } = ctx.state;

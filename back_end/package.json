@@ -5,7 +5,8 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node src/app.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "generate-api-docs": "node src/scripts/generate-api-docs.js"
   },
   "keywords": [],
   "author": "",
@@ -25,8 +26,10 @@
     "koa-helmet": "^8.0.1",
     "koa-json": "^2.0.2",
     "koa-logger": "^3.2.1",
+    "koa-router": "^13.0.1",
     "koa-session": "^7.0.2",
     "koa-static": "^5.0.0",
-    "mime-types": "^3.0.1"
+    "mime-types": "^3.0.1",
+    "swagger-jsdoc": "^6.2.8"
   }
 }

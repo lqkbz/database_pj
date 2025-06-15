@@ -4,9 +4,68 @@ const { createLogger } = require('../../middleware/logger');
 const logger = createLogger('AdminVehicleWorkOrder');
 
 /**
- * 获取所有车辆列表（管理员视图）
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/admin/vehicles:
+ *   get:
+ *     summary: 获取所有车辆列表（管理员视图）
+ *     description: 获取系统中所有车辆的列表，支持分页、搜索和过滤
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *         default: 1
+ *         description: 页码
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *         default: 10
+ *         description: 每页记录数
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: 搜索关键词（车牌号、VIN、车主姓名等）
+ *       - in: query
+ *         name: make
+ *         schema:
+ *           type: string
+ *         description: 车辆品牌
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [active, inactive]
+ *         description: 车辆状态
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     vehicles:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                     pagination:
+ *                       type: object
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器错误
  */
 const listVehicles = async (ctx) => {
   const { page = 1, limit = 10, search, make, status } = ctx.query;
@@ -99,9 +158,80 @@ const listVehicles = async (ctx) => {
 };
 
 /**
- * 获取所有工单列表（管理员视图）
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/admin/work-orders:
+ *   get:
+ *     summary: 获取所有工单列表（管理员视图）
+ *     description: 获取系统中所有工单的列表，支持分页和多种过滤条件
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *         default: 1
+ *         description: 页码
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *         default: 10
+ *         description: 每页记录数
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [pending, accepted, in_progress, completed, cancelled]
+ *         description: 工单状态
+ *       - in: query
+ *         name: mechanic
+ *         schema:
+ *           type: string
+ *         description: 技师ID
+ *       - in: query
+ *         name: customer
+ *         schema:
+ *           type: string
+ *         description: 客户ID
+ *       - in: query
+ *         name: dateFrom
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: 开始日期 (YYYY-MM-DD)
+ *       - in: query
+ *         name: dateTo
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: 结束日期 (YYYY-MM-DD)
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     workOrders:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                     pagination:
+ *                       type: object
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器错误
  */
 const listWorkOrders = async (ctx) => {
   const { page = 1, limit = 10, status, mechanic, customer, dateFrom, dateTo } = ctx.query;
@@ -227,9 +357,64 @@ const listWorkOrders = async (ctx) => {
 };
 
 /**
- * 更新工单信息（管理员操作）
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/admin/work-orders/{id}:
+ *   put:
+ *     summary: 更新工单信息（管理员操作）
+ *     description: 管理员更新工单的状态、优先级、分配技师等信息
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 工单ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [pending, accepted, in_progress, completed, cancelled]
+ *               priority:
+ *                 type: string
+ *                 enum: [low, normal, high, urgent]
+ *               mechanicId:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               estimatedCompletionTime:
+ *                 type: string
+ *                 format: date-time
+ *               estimatedCost:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 工单不存在
+ *       500:
+ *         description: 服务器错误
  */
 const updateWorkOrder = async (ctx) => {
   const orderId = ctx.params.id;
@@ -305,9 +490,40 @@ const updateWorkOrder = async (ctx) => {
 };
 
 /**
- * 删除工单（管理员操作）
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/admin/work-orders/{id}:
+ *   delete:
+ *     summary: 删除工单（管理员操作）
+ *     description: 管理员删除指定的工单，仅允许删除待处理或已取消的工单
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 工单ID
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 工单不存在
+ *       409:
+ *         description: 工单状态不允许删除
+ *       500:
+ *         description: 服务器错误
  */
 const deleteWorkOrder = async (ctx) => {
   const orderId = ctx.params.id;

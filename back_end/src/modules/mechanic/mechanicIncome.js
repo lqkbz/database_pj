@@ -4,9 +4,93 @@ const { createLogger } = require('../../middleware/logger');
 const logger = createLogger('MechanicIncome');
 
 /**
- * 获取技师月收入统计
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/mechanic/income/monthly:
+ *   get:
+ *     summary: 获取技师月收入统计
+ *     description: 获取当前登录技师指定月份的收入统计数据
+ *     tags: [Mechanic]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: month
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 12
+ *         description: 月份(1-12)，默认为当前月
+ *       - in: query
+ *         name: year
+ *         schema:
+ *           type: integer
+ *           minimum: 2000
+ *         description: 年份，默认为当前年
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     income:
+ *                       type: object
+ *                       properties:
+ *                         month:
+ *                           type: integer
+ *                         year:
+ *                           type: integer
+ *                         totalIncome:
+ *                           type: number
+ *                         completedOrders:
+ *                           type: integer
+ *                         incomeByDay:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               day:
+ *                                 type: integer
+ *                               income:
+ *                                 type: number
+ *                         incomeByType:
+ *                           type: object
+ *                           properties:
+ *                             labor:
+ *                               type: number
+ *                             parts:
+ *                               type: number
+ *                         topServices:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               name:
+ *                                 type: string
+ *                               count:
+ *                                 type: integer
+ *                               income:
+ *                                 type: number
+ *                         comparison:
+ *                           type: object
+ *                           properties:
+ *                             previousMonth:
+ *                               type: number
+ *                             percentChange:
+ *                               type: number
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器错误
  */
 const getMonthlyIncome = async (ctx) => {
   const { user } = ctx.state;

@@ -1,11 +1,88 @@
-const { createLogger } = require('../../../middleware/logger');
+const { createLogger } = require('../../middleware/logger');
 
 const logger = createLogger('AdminReports');
 
 /**
- * 获取负面反馈分析报表
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/admin/negative-feedback:
+ *   get:
+ *     summary: 获取负面反馈分析报表
+ *     description: 获取指定时间范围内的负面反馈分析统计数据
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: query
+ *         name: timeRange
+ *         schema:
+ *           type: string
+ *           enum: [day, week, month, year]
+ *         default: month
+ *         description: 时间范围
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: 开始日期 (YYYY-MM-DD)
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: 结束日期 (YYYY-MM-DD)
+ *       - in: query
+ *         name: minRating
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 5
+ *         default: 3
+ *         description: 最低评分阈值（小于等于此值的评分被视为负面反馈）
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     timeRange:
+ *                       type: string
+ *                     startDate:
+ *                       type: string
+ *                     endDate:
+ *                       type: string
+ *                     totalFeedback:
+ *                       type: number
+ *                     negativeFeedbackCount:
+ *                       type: number
+ *                     negativeFeedbackRate:
+ *                       type: number
+ *                     averageRating:
+ *                       type: number
+ *                     ratingDistribution:
+ *                       type: array
+ *                     commonIssues:
+ *                       type: array
+ *                     mechanicPerformance:
+ *                       type: array
+ *                     serviceTypeIssues:
+ *                       type: array
+ *                     feedbackTrend:
+ *                       type: array
+ *                     recentNegativeFeedback:
+ *                       type: array
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器错误
  */
 const getNegativeFeedbackStats = async (ctx) => {
   const { timeRange = 'month', startDate, endDate, minRating = 3 } = ctx.query;

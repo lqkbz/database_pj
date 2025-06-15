@@ -4,9 +4,96 @@ const { createLogger } = require('../../middleware/logger');
 const logger = createLogger('MechanicWorkOrders');
 
 /**
- * 获取当前技师的工单列表
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/mechanic/work-orders:
+ *   get:
+ *     summary: 获取当前技师的工单列表
+ *     description: 获取当前登录技师的所有工单，支持分页和状态筛选
+ *     tags: [Mechanic]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [pending, accepted, in_progress, completed, cancelled]
+ *         description: 工单状态过滤
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: 页码
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: 每页记录数
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     workOrders:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                           vehicleId:
+ *                             type: string
+ *                           vehicleInfo:
+ *                             type: object
+ *                           customerId:
+ *                             type: string
+ *                           customerInfo:
+ *                             type: object
+ *                           description:
+ *                             type: string
+ *                           status:
+ *                             type: string
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *                           acceptedAt:
+ *                             type: string
+ *                             format: date-time
+ *                           estimatedCompletionTime:
+ *                             type: string
+ *                             format: date-time
+ *                           priority:
+ *                             type: string
+ *                           estimatedCost:
+ *                             type: number
+ *                           progressNotes:
+ *                             type: array
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         page:
+ *                           type: integer
+ *                         limit:
+ *                           type: integer
+ *                         total:
+ *                           type: integer
+ *                         pages:
+ *                           type: integer
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器错误
  */
 const getMyWorkOrders = async (ctx) => {
   const { user } = ctx.state;
@@ -90,9 +177,67 @@ const getMyWorkOrders = async (ctx) => {
 };
 
 /**
- * 接受工单
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/mechanic/work-orders/{id}/accept:
+ *   post:
+ *     summary: 接受工单
+ *     description: 技师接受指定的工单
+ *     tags: [Mechanic]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 工单ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - estimatedCompletionTime
+ *               - estimatedCost
+ *             properties:
+ *               estimatedCompletionTime:
+ *                 type: string
+ *                 format: date-time
+ *                 description: 预计完成时间
+ *               estimatedCost:
+ *                 type: number
+ *                 description: 预计费用
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *                   example: 工单已接受
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     workOrder:
+ *                       type: object
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 未找到工单
+ *       409:
+ *         description: 工单状态冲突
+ *       500:
+ *         description: 服务器错误
  */
 const acceptWorkOrder = async (ctx) => {
   const { user } = ctx.state;
@@ -158,9 +303,62 @@ const acceptWorkOrder = async (ctx) => {
 };
 
 /**
- * 拒绝工单
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/mechanic/work-orders/{id}/refuse:
+ *   post:
+ *     summary: 拒绝工单
+ *     description: 技师拒绝指定的工单
+ *     tags: [Mechanic]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 工单ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - reason
+ *             properties:
+ *               reason:
+ *                 type: string
+ *                 description: 拒绝原因
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *                   example: 工单已拒绝
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     refusalRecord:
+ *                       type: object
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 未找到工单
+ *       409:
+ *         description: 工单状态冲突
+ *       500:
+ *         description: 服务器错误
  */
 const refuseWorkOrder = async (ctx) => {
   const { user } = ctx.state;
@@ -209,9 +407,70 @@ const refuseWorkOrder = async (ctx) => {
 };
 
 /**
- * 更新工单进度
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/mechanic/work-orders/{id}/progress:
+ *   post:
+ *     summary: 更新工单进度
+ *     description: 技师更新工单的进度和状态
+ *     tags: [Mechanic]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 工单ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - progressNote
+ *             properties:
+ *               progressNote:
+ *                 type: string
+ *                 description: 进度备注
+ *               estimatedCompletionTime:
+ *                 type: string
+ *                 format: date-time
+ *                 description: 更新的预计完成时间
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *                   example: 工单进度已更新
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     progressUpdate:
+ *                       type: object
+ *                     status:
+ *                       type: string
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       403:
+ *         description: 无权更新该工单
+ *       404:
+ *         description: 未找到工单
+ *       409:
+ *         description: 工单状态冲突
+ *       500:
+ *         description: 服务器错误
  */
 const updateWorkOrderProgress = async (ctx) => {
   const { user } = ctx.state;
@@ -272,9 +531,79 @@ const updateWorkOrderProgress = async (ctx) => {
 };
 
 /**
- * 记录工单所用材料
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/mechanic/work-orders/{id}/materials:
+ *   post:
+ *     summary: 记录工单所用材料
+ *     description: 技师记录工单维修过程中使用的材料
+ *     tags: [Mechanic]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 工单ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - materials
+ *             properties:
+ *               materials:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - name
+ *                     - quantity
+ *                     - unitPrice
+ *                   properties:
+ *                     name:
+ *                       type: string
+ *                       description: 材料名称
+ *                     quantity:
+ *                       type: number
+ *                       description: 数量
+ *                     unitPrice:
+ *                       type: number
+ *                       description: 单价
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *                   example: 材料记录已添加
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     materialRecord:
+ *                       type: object
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       403:
+ *         description: 无权为该工单添加材料
+ *       404:
+ *         description: 未找到工单
+ *       409:
+ *         description: 工单状态冲突
+ *       500:
+ *         description: 服务器错误
  */
 const recordWorkOrderMaterials = async (ctx) => {
   const { user } = ctx.state;
@@ -353,9 +682,68 @@ const recordWorkOrderMaterials = async (ctx) => {
 };
 
 /**
- * 完成工单
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/mechanic/work-orders/{id}/complete:
+ *   post:
+ *     summary: 完成工单
+ *     description: 技师标记工单为已完成
+ *     tags: [Mechanic]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 工单ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - laborCost
+ *               - summaryReport
+ *             properties:
+ *               laborCost:
+ *                 type: number
+ *                 description: 人工费用
+ *               summaryReport:
+ *                 type: string
+ *                 description: 维修总结报告
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *                   example: 工单已完成
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     workOrder:
+ *                       type: object
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       403:
+ *         description: 无权完成该工单
+ *       404:
+ *         description: 未找到工单
+ *       409:
+ *         description: 工单状态冲突
+ *       500:
+ *         description: 服务器错误
  */
 const completeWorkOrder = async (ctx) => {
   const { user } = ctx.state;
