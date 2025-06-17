@@ -56,7 +56,7 @@ const { createError } = require('../../middleware/errorhandler');
  * 
  * @param {Object} ctx - Koa上下文
  */
-module.exports = async (ctx) => {
+const refresh = async (ctx) => {
   const { refreshToken } = ctx.request.body;
   
   if (!refreshToken) {
@@ -109,4 +109,8 @@ module.exports = async (ctx) => {
       accessToken
     }
   };
+};
+
+module.exports = {
+  refresh
 };

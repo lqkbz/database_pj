@@ -3,10 +3,49 @@ const { createLogger } = require('../../middleware/logger');
 const logger = createLogger('System');
 
 /**
- * 健康检查接口
- * 返回系统运行状态信息
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/v1/healthz:
+ *   get:
+ *     summary: 系统健康检查
+ *     description: 获取系统运行状态、内存使用情况和运行时间等信息
+ *     tags: [System]
+ *     responses:
+ *       200:
+ *         description: 系统状态正常
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: ok
+ *                   description: 系统状态
+ *                 uptime:
+ *                   type: string
+ *                   example: "2h 30m 45s"
+ *                   description: 系统运行时间
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   description: 检查时间戳
+ *                 memory:
+ *                   type: object
+ *                   properties:
+ *                     rss:
+ *                       type: string
+ *                       example: "128MB"
+ *                       description: 常驻内存大小
+ *                     heapTotal:
+ *                       type: string
+ *                       example: "64MB"
+ *                       description: 堆总大小
+ *                     heapUsed:
+ *                       type: string
+ *                       example: "32MB"
+ *                       description: 已使用堆大小
+ *       500:
+ *         description: 系统异常
  */
 const healthCheck = async (ctx) => {
   const startTime = process.uptime();

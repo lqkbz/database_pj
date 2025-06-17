@@ -5,6 +5,11 @@
  * - 验证用户是否具有访问权限
  * - 支持角色和权限级别的控制
  * - 处理授权相关的错误
+ * 
+ * 车辆维修管理系统角色定义：
+ * - customer: 客户 - 管理自己的车辆和工单
+ * - mechanic: 维修人员 - 处理分配给自己的工单
+ * - admin: 系统管理员 - 全局管理权限
  */
 
 const { ErrorTypes } = require('./errorhandler');
@@ -45,6 +50,14 @@ const createAuthzError = {
   
   accountRestricted: (reason) => {
     return new AuthorizationError(`账户受限: ${reason}`);
+  },
+
+  roleNotAllowed: (action) => {
+    return new AuthorizationError(`您的角色无权进行此操作: ${action}`);
+  },
+
+  resourceNotFound: () => {
+    return new AuthorizationError('请求的资源不存在或您无权访问');
   }
 };
 
@@ -66,7 +79,8 @@ const requireRole = (roles) => {
         ctx.body = {
           status: 'error',
           code: 'AUTHENTICATION_ERROR',
-          message: '请先登录'
+          message: '请先登录',
+          timestamp: new Date().toISOString()
         };
         return;
       }
@@ -78,13 +92,19 @@ const requireRole = (roles) => {
         throw createAuthzError.insufficientRole(allowedRoles.join(' 或 '));
       }
       
+      // 检查账户状态
+      if (ctx.state.user.status !== 'active') {
+        throw createAuthzError.accountRestricted('账户状态异常');
+      }
+      
       await next();
     } catch (error) {
       ctx.status = error.statusCode || 403;
       ctx.body = {
         status: 'error',
         code: error.code || 'AUTHORIZATION_ERROR',
-        message: error.message || '权限不足'
+        message: error.message || '权限不足',
+        timestamp: new Date().toISOString()
       };
     }
   };
@@ -108,7 +128,8 @@ const requirePermission = (permissions) => {
         ctx.body = {
           status: 'error',
           code: 'AUTHENTICATION_ERROR',
-          message: '请先登录'
+          message: '请先登录',
+          timestamp: new Date().toISOString()
         };
         return;
       }
@@ -131,7 +152,8 @@ const requirePermission = (permissions) => {
       ctx.body = {
         status: 'error',
         code: error.code || 'AUTHORIZATION_ERROR',
-        message: error.message || '权限不足'
+        message: error.message || '权限不足',
+        timestamp: new Date().toISOString()
       };
     }
   };
@@ -152,19 +174,24 @@ const requireOwnership = (getResourceOwnerId) => {
         ctx.body = {
           status: 'error',
           code: 'AUTHENTICATION_ERROR',
-          message: '请先登录'
+          message: '请先登录',
+          timestamp: new Date().toISOString()
         };
         return;
+      }
+      
+      // 管理员有全局权限
+      if (ctx.state.user.role === ROLES.ADMIN) {
+        return await next();
       }
       
       // 获取资源所有者ID
       const ownerId = await getResourceOwnerId(ctx);
       
-      // 检查用户是否是所有者或管理员
+      // 检查用户是否是所有者
       const isOwner = String(ctx.state.user.id) === String(ownerId);
-      const isAdmin = ctx.state.user.role === 'admin';
       
-      if (!isOwner && !isAdmin) {
+      if (!isOwner) {
         throw createAuthzError.resourceOwnership();
       }
       
@@ -174,14 +201,113 @@ const requireOwnership = (getResourceOwnerId) => {
       ctx.body = {
         status: 'error',
         code: error.code || 'AUTHORIZATION_ERROR',
-        message: error.message || '权限不足'
+        message: error.message || '权限不足',
+        timestamp: new Date().toISOString()
       };
     }
   };
 };
 
 /**
- * 通用访问控制中间件
+ * 车辆维修系统专用访问控制中间件
+ * 根据业务规则进行访问控制
+ */
+const checkVehicleRepairAccess = async (ctx, next) => {
+  // 公共路径，不需要认证
+  const publicPaths = [
+    '/api/v1/auth/login',
+    '/api/v1/auth/register', 
+    '/api/v1/auth/refresh',
+    '/api/v1/healthz',
+    '/api/v1/openapi.json',
+    '/api/v1/docs'
+  ];
+  
+  // 静态文件路径前缀
+  const staticPathPrefix = '/api/v1/static/';
+  
+  // 如果是公共路径或静态文件路径，直接允许访问
+  if (publicPaths.includes(ctx.path) || ctx.path.startsWith(staticPathPrefix)) {
+    return await next();
+  }
+  
+  // 如果未认证，拒绝访问
+  if (!ctx.state.user) {
+    ctx.status = 401;
+    ctx.body = {
+      status: 'error',
+      code: 'AUTHENTICATION_ERROR',
+      message: '请先登录',
+      timestamp: new Date().toISOString()
+    };
+    return;
+  }
+  
+  const userRole = ctx.state.user.role;
+  const userId = ctx.state.user.id;
+  
+  // 管理员有全局访问权限
+  if (userRole === ROLES.ADMIN) {
+    return await next();
+  }
+  
+  // 客户访问控制
+  if (userRole === ROLES.CUSTOMER) {
+    // 客户只能访问自己的资源和公共接口
+    const customerAllowedPaths = [
+      /^\/api\/v1\/auth\/.*/,           // 认证相关
+      /^\/api\/v1\/users\/me(\/.*)?$/,  // 自己的用户信息
+      /^\/api\/v1\/vehicles(\/.*)?$/,   // 自己的车辆信息
+      /^\/api\/v1\/work-orders(\/.*)?$/ // 自己的工单信息
+    ];
+    
+    const isAllowed = customerAllowedPaths.some(pattern => pattern.test(ctx.path));
+    
+    if (!isAllowed) {
+      logger.warn(`客户尝试访问未授权路径: ${ctx.path}`);
+      ctx.status = 403;
+      ctx.body = {
+        status: 'error',
+        code: 'AUTHORIZATION_ERROR',
+        message: '客户无权访问此资源',
+        timestamp: new Date().toISOString()
+      };
+      return;
+    }
+  }
+  
+  // 技师访问控制
+  if (userRole === ROLES.MECHANIC) {
+    // 技师可以访问自己的信息和分配的工单
+    const mechanicAllowedPaths = [
+      /^\/api\/v1\/auth\/.*/,               // 认证相关
+      /^\/api\/v1\/mechanics\/me(\/.*)?$/,  // 自己的技师信息
+      /^\/api\/v1\/work-orders(\/.*)?$/     // 工单相关（需要进一步检查是否分配给自己）
+    ];
+    
+    const isAllowed = mechanicAllowedPaths.some(pattern => pattern.test(ctx.path));
+    
+    if (!isAllowed) {
+      logger.warn(`技师尝试访问未授权路径: ${ctx.path}`);
+      ctx.status = 403;
+      ctx.body = {
+        status: 'error',
+        code: 'AUTHORIZATION_ERROR',
+        message: '技师无权访问此资源',
+        timestamp: new Date().toISOString()
+      };
+      return;
+    }
+  }
+  
+  // 记录访问日志
+  logger.info(`用户 ${userId}(${userRole}) 访问: ${ctx.method} ${ctx.path}`);
+  
+  return await next();
+};
+
+/**
+ * 通用访问控制中间件（保持原有逻辑兼容性）
  * 根据配置的资源访问规则验证用户权限
  */
 const checkAccessControl = async (ctx, next) => {
@@ -209,7 +335,8 @@ const checkAccessControl = async (ctx, next) => {
     ctx.body = {
       status: 'error',
       code: 'AUTHENTICATION_ERROR',
-      message: '请先登录'
+      message: '请先登录',
+      timestamp: new Date().toISOString()
     };
     return;
   }
@@ -238,7 +365,8 @@ const checkAccessControl = async (ctx, next) => {
     ctx.body = {
       status: 'error',
       code: 'AUTHORIZATION_ERROR',
-      message: '无权访问此资源'
+      message: '无权访问此资源',
+      timestamp: new Date().toISOString()
     };
     return;
   }
@@ -252,7 +380,8 @@ const checkAccessControl = async (ctx, next) => {
     ctx.body = {
       status: 'error',
       code: 'AUTHORIZATION_ERROR',
-      message: '无权访问此资源'
+      message: '无权访问此资源',
+      timestamp: new Date().toISOString()
     };
     return;
   }
@@ -302,7 +431,8 @@ const checkAccessControl = async (ctx, next) => {
   ctx.body = {
     status: 'error',
     code: 'AUTHORIZATION_ERROR',
-    message: '无权访问此资源'
+    message: '无权访问此资源',
+    timestamp: new Date().toISOString()
   };
 };
 
@@ -312,5 +442,6 @@ module.exports = {
   requireOwnership,
   createAuthzError,
   AuthorizationError,
-  checkAccessControl
+  checkAccessControl,
+  checkVehicleRepairAccess
 };

@@ -421,7 +421,7 @@ const createMechanic = async (ctx) => {
 /**
  * @swagger
  * /api/admin/mechanics/{id}:
- *   put:
+ *   patch:
  *     summary: 更新技师信息
  *     description: 更新指定技师的信息
  *     tags: [Admin]

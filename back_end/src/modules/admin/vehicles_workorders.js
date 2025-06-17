@@ -557,9 +557,143 @@ const deleteWorkOrder = async (ctx) => {
   };
 };
 
+/**
+ * @swagger
+ * /api/admin/workorders/{id}:
+ *   get:
+ *     summary: 获取工单详情（管理员视图）
+ *     description: 获取指定工单的详细信息，包括客户、技师、车辆、维修历史等
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 工单ID
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     workOrder:
+ *                       type: object
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 工单不存在
+ *       500:
+ *         description: 服务器错误
+ */
+const getWorkOrderDetail = async (ctx) => {
+  const orderId = ctx.params.id;
+  
+  // 从数据库获取工单详情
+  // 实际项目中替换为数据库查询
+  const workOrder = {
+    id: orderId,
+    vehicleId: 'v1',
+    vehicleInfo: {
+      id: 'v1',
+      make: '丰田',
+      model: '卡罗拉',
+      year: 2020,
+      licensePlate: '京A12345',
+      vin: 'ABC123456789'
+    },
+    customerId: 'user1',
+    customerInfo: {
+      id: 'user1',
+      name: '张三',
+      phone: '13800138000',
+      email: 'zhang@example.com'
+    },
+    mechanicId: 'mech1',
+    mechanicInfo: {
+      id: 'mech1',
+      name: '李师傅',
+      phone: '13911112222',
+      specialization: '发动机维修'
+    },
+    description: '发动机异响，怠速不稳',
+    status: 'in_progress',
+    priority: 'normal',
+    createdAt: '2023-05-15T08:30:00Z',
+    acceptedAt: '2023-05-15T09:45:00Z',
+    estimatedCompletionTime: '2023-05-17T16:00:00Z',
+    actualCompletionTime: null,
+    estimatedCost: 1200,
+    actualCost: null,
+    materials: [
+      {
+        id: 'mat1',
+        name: '火花塞',
+        quantity: 4,
+        unitPrice: 150,
+        totalPrice: 600
+      },
+      {
+        id: 'mat2',
+        name: '机油',
+        quantity: 1,
+        unitPrice: 300,
+        totalPrice: 300
+      }
+    ],
+    progressHistory: [
+      {
+        timestamp: '2023-05-15T09:45:00Z',
+        status: 'accepted',
+        note: '已接受工单，开始检查车辆',
+        mechanic: '李师傅'
+      },
+      {
+        timestamp: '2023-05-15T11:30:00Z',
+        status: 'in_progress',
+        note: '已确认问题，开始更换火花塞',
+        mechanic: '李师傅'
+      },
+      {
+        timestamp: '2023-05-16T10:15:00Z',
+        status: 'in_progress',
+        note: '火花塞更换完成，正在更换机油',
+        mechanic: '李师傅'
+      }
+    ],
+    feedback: null,
+    totalLaborCost: 500,
+    totalMaterialCost: 900,
+    totalCost: 1400
+  };
+  
+  // 检查工单是否存在
+  if (!workOrder) {
+    throw createError.notFound('工单不存在');
+  }
+  
+  logger.info(`管理员查看了工单 ${orderId} 的详细信息`);
+  
+  ctx.body = {
+    status: 'success',
+    data: {
+      workOrder
+    }
+  };
+};
+
 module.exports = {
   listVehicles,
   listWorkOrders,
+  getWorkOrderDetail,
   updateWorkOrder,
   deleteWorkOrder
 };

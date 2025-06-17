@@ -75,7 +75,7 @@ const { createError } = require('../../middleware/errorhandler');
  * 
  * @param {Object} ctx - Koa上下文
  */
-module.exports = async (ctx) => {
+const profile = async (ctx) => {
   // 从ctx.state获取用户信息（由认证中间件设置）
   const { user } = ctx.state;
   
@@ -118,4 +118,8 @@ module.exports = async (ctx) => {
       }
     }
   };
+};
+
+module.exports = {
+  profile
 };

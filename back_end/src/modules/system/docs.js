@@ -6,9 +6,48 @@ const { generateApiSpec } = require('../../utils/apiDocs');
 const logger = createLogger('System');
 
 /**
- * 获取OpenAPI规范文档
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/v1/openapi.json:
+ *   get:
+ *     summary: 获取OpenAPI规范文档
+ *     description: 返回系统的OpenAPI 3.0规范文档JSON格式
+ *     tags: [System]
+ *     responses:
+ *       200:
+ *         description: 成功返回OpenAPI规范文档
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               description: OpenAPI 3.0规范文档
+ *               properties:
+ *                 openapi:
+ *                   type: string
+ *                   example: "3.0.0"
+ *                 info:
+ *                   type: object
+ *                   properties:
+ *                     title:
+ *                       type: string
+ *                     version:
+ *                       type: string
+ *                     description:
+ *                       type: string
+ *                 servers:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       url:
+ *                         type: string
+ *                 paths:
+ *                   type: object
+ *                   description: API路径定义
+ *                 components:
+ *                   type: object
+ *                   description: 可重用组件
+ *       500:
+ *         description: 服务器错误
  */
 const getOpenApiSpec = async (ctx) => {
   try {
@@ -39,9 +78,33 @@ const getOpenApiSpec = async (ctx) => {
 };
 
 /**
- * 提供Swagger UI界面
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/v1/docs:
+ *   get:
+ *     summary: 获取Swagger UI界面
+ *     description: 返回Swagger UI文档界面，用于交互式API文档浏览
+ *     tags: [System]
+ *     responses:
+ *       200:
+ *         description: 成功返回Swagger UI页面
+ *         content:
+ *           text/html:
+ *             schema:
+ *               type: string
+ *               description: Swagger UI HTML页面
+ *       500:
+ *         description: 服务器错误
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: error
+ *                 message:
+ *                   type: string
+ *                   example: 无法加载Swagger UI
  */
 const getSwaggerUI = async (ctx) => {
   try {
@@ -68,9 +131,43 @@ const getSwaggerUI = async (ctx) => {
 };
 
 /**
- * 生成并保存OpenAPI规范
- * 
- * @param {Object} ctx - Koa上下文
+ * @swagger
+ * /api/v1/docs/generate:
+ *   post:
+ *     summary: 生成并保存OpenAPI规范文档
+ *     description: 重新生成OpenAPI规范文档并保存到文件系统
+ *     tags: [System]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 成功生成并保存文档
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *                   example: OpenAPI规范已生成并保存
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 生成失败
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: error
+ *                 message:
+ *                   type: string
+ *                   example: 生成OpenAPI规范失败
  */
 const generateOpenApiSpec = async (ctx) => {
   try {

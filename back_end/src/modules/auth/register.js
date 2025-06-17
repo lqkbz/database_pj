@@ -89,7 +89,7 @@ const { createError } = require('../../middleware/errorhandler');
  * 
  * @param {Object} ctx - Koa上下文
  */
-module.exports = async (ctx) => {
+const register = async (ctx) => {
   const userData = ctx.request.body;
   
   // 验证用户输入
@@ -137,4 +137,8 @@ module.exports = async (ctx) => {
       createdAt: newUser.createdAt
     }
   };
+};
+
+module.exports = {
+  register
 };

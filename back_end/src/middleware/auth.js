@@ -5,6 +5,11 @@
  * - 验证用户的JWT令牌
  * - 解析用户信息并添加到ctx.state
  * - 处理认证相关的错误
+ * 
+ * 针对车辆维修管理系统，支持三种角色：
+ * - customer: 客户 - 提交报修、查询信息、反馈评价
+ * - mechanic: 维修人员 - 接收工单、记录材料、更新进度
+ * - admin: 系统管理员 - 维护所有信息、监控系统
  */
 
 const jwt = require('jsonwebtoken');
@@ -33,7 +38,7 @@ const createAuthError = {
   },
   
   tokenExpired: () => {
-    return new AuthenticationError('认证令牌已过期');
+    return new AuthenticationError('认证令牌已过期，请重新登录');
   },
   
   tokenInvalid: () => {
@@ -45,7 +50,15 @@ const createAuthError = {
   },
   
   accountDisabled: () => {
-    return new AuthenticationError('账户已被禁用');
+    return new AuthenticationError('账户已被禁用，请联系管理员');
+  },
+
+  accountSuspended: () => {
+    return new AuthenticationError('账户已被暂停，请联系管理员');
+  },
+
+  invalidRole: () => {
+    return new AuthenticationError('用户角色无效');
   }
 };
 
@@ -67,8 +80,31 @@ const authMiddleware = async (ctx, next) => {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
       
+      // 验证用户角色是否有效
+      const validRoles = ['customer', 'mechanic', 'admin'];
+      if (!validRoles.includes(decoded.role)) {
+        throw createAuthError.invalidRole();
+      }
+
+      // 验证用户状态
+      if (decoded.status === 'inactive') {
+        throw createAuthError.accountDisabled();
+      }
+      
+      if (decoded.status === 'suspended') {
+        throw createAuthError.accountSuspended();
+      }
+      
       // 将用户信息添加到ctx.state
-      ctx.state.user = decoded;
+      ctx.state.user = {
+        id: decoded.id,
+        username: decoded.username,
+        role: decoded.role,
+        status: decoded.status,
+        fullName: decoded.fullName,
+        phone: decoded.phone,
+        email: decoded.email
+      };
       
       // 继续处理请求
       await next();
@@ -85,7 +121,8 @@ const authMiddleware = async (ctx, next) => {
     ctx.body = {
       status: 'error',
       code: error.code || 'AUTHENTICATION_ERROR',
-      message: error.message || '认证失败'
+      message: error.message || '认证失败',
+      timestamp: new Date().toISOString()
     };
   }
 };
@@ -93,6 +130,7 @@ const authMiddleware = async (ctx, next) => {
 /**
  * 可选认证中间件
  * 如果有令牌则验证，没有则继续
+ * 适用于一些公共接口，有令牌时可以获得更多信息
  */
 const optionalAuth = async (ctx, next) => {
   try {
@@ -101,7 +139,22 @@ const optionalAuth = async (ctx, next) => {
       const token = authHeader.substring(7);
       try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-        ctx.state.user = decoded;
+        
+        // 验证角色和状态
+        const validRoles = ['customer', 'mechanic', 'admin'];
+        if (validRoles.includes(decoded.role) && decoded.status === 'active') {
+          ctx.state.user = {
+            id: decoded.id,
+            username: decoded.username,
+            role: decoded.role,
+            status: decoded.status,
+            fullName: decoded.fullName,
+            phone: decoded.phone,
+            email: decoded.email
+          };
+        } else {
+          ctx.state.user = null;
+        }
       } catch (error) {
         // 令牌无效但不阻止请求
         ctx.state.user = null;
@@ -111,7 +164,50 @@ const optionalAuth = async (ctx, next) => {
     }
     await next();
   } catch (error) {
+    ctx.state.user = null;
     await next();
+  }
+};
+
+/**
+ * 根据用户角色生成JWT令牌
+ * @param {Object} user - 用户信息
+ * @returns {String} JWT令牌
+ */
+const generateToken = (user) => {
+  const payload = {
+    id: user.id,
+    username: user.username,
+    role: user.role,
+    status: user.status,
+    fullName: user.fullName,
+    phone: user.phone,
+    email: user.email
+  };
+  
+  const options = {
+    expiresIn: process.env.JWT_EXPIRES_IN || '24h',
+    issuer: 'vehicle-repair-system'
+  };
+  
+  return jwt.sign(payload, process.env.JWT_SECRET || 'your-secret-key', options);
+};
+
+/**
+ * 验证刷新令牌
+ * @param {String} refreshToken - 刷新令牌
+ * @returns {Object} 解码后的令牌信息
+ */
+const verifyRefreshToken = (refreshToken) => {
+  try {
+    return jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || 'your-refresh-secret');
+  } catch (error) {
+    if (error.name === 'TokenExpiredError') {
+      throw createAuthError.tokenExpired();
+    } else if (error.name === 'JsonWebTokenError') {
+      throw createAuthError.tokenInvalid();
+    }
+    throw error;
   }
 };
 
@@ -119,5 +215,7 @@ module.exports = {
   authMiddleware,
   optionalAuth,
   createAuthError,
-  AuthenticationError
+  AuthenticationError,
+  generateToken,
+  verifyRefreshToken
 };
