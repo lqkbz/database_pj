@@ -1,14 +1,16 @@
 const { createError } = require('../../middleware/errorhandler');
 const { createLogger } = require('../../middleware/logger');
+const { Vehicle, WorkOrder, User, WorkOrderMechanic, MechanicProfile, WorkOrderMaterial, Part } = require('../../models');
+const { Op } = require('sequelize');
 
-const logger = createLogger('AdminVehicleWorkOrder');
+const logger = createLogger('AdminVehiclesWorkOrders');
 
 /**
  * @swagger
  * /api/admin/vehicles:
  *   get:
- *     summary: 获取所有车辆列表（管理员视图）
- *     description: 获取系统中所有车辆的列表，支持分页、搜索和过滤
+ *     summary: 获取车辆列表（管理员视图）
+ *     description: 获取系统中所有车辆的列表，支持分页和搜索
  *     tags: [Admin]
  *     parameters:
  *       - in: query
@@ -30,18 +32,17 @@ const logger = createLogger('AdminVehicleWorkOrder');
  *         name: search
  *         schema:
  *           type: string
- *         description: 搜索关键词（车牌号、VIN、车主姓名等）
+ *         description: 搜索关键词（车牌号、品牌型号等）
  *       - in: query
  *         name: make
  *         schema:
  *           type: string
  *         description: 车辆品牌
  *       - in: query
- *         name: status
+ *         name: owner
  *         schema:
  *           type: string
- *           enum: [active, inactive]
- *         description: 车辆状态
+ *         description: 车主姓名
  *     responses:
  *       200:
  *         description: 成功
@@ -68,93 +69,87 @@ const logger = createLogger('AdminVehicleWorkOrder');
  *         description: 服务器错误
  */
 const listVehicles = async (ctx) => {
-  const { page = 1, limit = 10, search, make, status } = ctx.query;
+  const { page = 1, limit = 10, search, make, owner } = ctx.query;
   
-  // 构建查询条件
-  const query = {};
-  if (search) {
-    // 实际项目中替换为搜索条件
-    query.search = search;
-  }
-  
-  if (make) {
-    query.make = make;
-  }
-  
-  if (status) {
-    query.status = status;
-  }
-  
-  // 从数据库获取车辆列表
-  // 实际项目中替换为数据库查询
-  const vehicles = [
-    {
-      id: 'v1',
-      make: '丰田',
-      model: '卡罗拉',
-      year: 2020,
-      licensePlate: '京A12345',
-      vin: 'ABC123456789',
-      owner: {
-        id: 'user1',
-        name: '张三',
-        phone: '13800138000'
-      },
-      status: 'active',
-      lastMaintenanceDate: '2023-01-15',
-      orderCount: 3
-    },
-    {
-      id: 'v2',
-      make: '本田',
-      model: '思域',
-      year: 2019,
-      licensePlate: '京B67890',
-      vin: 'DEF987654321',
-      owner: {
-        id: 'user2',
-        name: '李四',
-        phone: '13900001111'
-      },
-      status: 'active',
-      lastMaintenanceDate: '2022-11-20',
-      orderCount: 2
-    },
-    {
-      id: 'v3',
-      make: '大众',
-      model: '帕萨特',
-      year: 2018,
-      licensePlate: '京C54321',
-      vin: 'GHI567891234',
-      owner: {
-        id: 'user3',
-        name: '王五',
-        phone: '13700002222'
-      },
-      status: 'inactive',
-      lastMaintenanceDate: '2022-09-05',
-      orderCount: 5
+  try {
+    // 构建查询条件
+    const whereClause = {};
+    const userWhereClause = {};
+    
+    if (search) {
+      whereClause[Op.or] = [
+        { plate_no: { [Op.like]: `%${search}%` } },
+        { make: { [Op.like]: `%${search}%` } },
+        { model: { [Op.like]: `%${search}%` } }
+      ];
     }
-  ];
-  
-  // 计算总数量
-  const total = vehicles.length;
-  
-  logger.info(`管理员查询了车辆列表，返回 ${vehicles.length} 条记录`);
-  
-  ctx.body = {
-    status: 'success',
-    data: {
-      vehicles,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / parseInt(limit))
+    
+    if (make) {
+      whereClause.make = { [Op.like]: `%${make}%` };
+    }
+    
+    if (owner) {
+      userWhereClause.name = { [Op.like]: `%${owner}%` };
+    }
+    
+    // 查询车辆列表
+    const { count, rows: vehicles } = await Vehicle.findAndCountAll({
+      where: whereClause,
+      include: [
+        {
+          model: User,
+          as: 'owner',
+          where: Object.keys(userWhereClause).length > 0 ? userWhereClause : undefined,
+          attributes: ['user_id', 'name'],
+          required: true
+        },
+        {
+          model: WorkOrder,
+          as: 'workOrders',
+          attributes: ['order_id'],
+          required: false
+        }
+      ],
+      attributes: ['vehicle_id', 'make', 'model', 'year', 'plate_no', 'vin', 'created_at'],
+      offset: (page - 1) * limit,
+      limit: parseInt(limit),
+      order: [['created_at', 'DESC']]
+    });
+
+    // 处理数据
+    const processedVehicles = vehicles.map(vehicle => ({
+      id: vehicle.vehicle_id,
+      make: vehicle.make,
+      model: vehicle.model,
+      year: vehicle.year,
+      licensePlate: vehicle.plate_no,
+      vin: vehicle.vin,
+      owner: {
+        id: vehicle.owner.user_id,
+        name: vehicle.owner.name
+      },
+      orderCount: vehicle.workOrders ? vehicle.workOrders.length : 0,
+      createdAt: vehicle.created_at
+    }));
+    
+    logger.info(`管理员查询了车辆列表，返回 ${vehicles.length} 条记录`);
+    
+    ctx.body = {
+      status: 'success',
+      data: {
+        vehicles: processedVehicles,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: count,
+          pages: Math.ceil(count / parseInt(limit))
+        }
       }
-    }
-  };
+    };
+  } catch (error) {
+    logger.error('获取车辆列表失败:', error);
+    throw createError.internal('获取车辆列表失败');
+  }
 };
 
 /**
@@ -184,7 +179,7 @@ const listVehicles = async (ctx) => {
  *         name: status
  *         schema:
  *           type: string
- *           enum: [pending, accepted, in_progress, completed, cancelled]
+ *           enum: [pending, assigned, in_progress, done, cancel]
  *         description: 工单状态
  *       - in: query
  *         name: mechanic
@@ -236,132 +231,267 @@ const listVehicles = async (ctx) => {
 const listWorkOrders = async (ctx) => {
   const { page = 1, limit = 10, status, mechanic, customer, dateFrom, dateTo } = ctx.query;
   
-  // 构建查询条件
-  const query = {};
-  if (status) {
-    query.status = status;
-  }
-  
-  if (mechanic) {
-    query.mechanicId = mechanic;
-  }
-  
-  if (customer) {
-    query.customerId = customer;
-  }
-  
-  if (dateFrom) {
-    query.dateFrom = dateFrom;
-  }
-  
-  if (dateTo) {
-    query.dateTo = dateTo;
-  }
-  
-  // 从数据库获取工单列表
-  // 实际项目中替换为数据库查询
-  const workOrders = [
-    {
-      id: 'wo1',
-      vehicleId: 'v1',
-      vehicleInfo: {
-        make: '丰田',
-        model: '卡罗拉',
-        licensePlate: '京A12345'
-      },
-      customerId: 'user1',
-      customerInfo: {
-        name: '张三',
-        phone: '13800138000'
-      },
-      mechanicId: 'mech1',
-      mechanicInfo: {
-        name: '李师傅',
-        phone: '13911112222'
-      },
-      description: '发动机异响，怠速不稳',
-      status: 'in_progress',
-      priority: 'normal',
-      createdAt: '2023-05-15T08:30:00Z',
-      acceptedAt: '2023-05-15T09:45:00Z',
-      estimatedCompletionTime: '2023-05-17T16:00:00Z',
-      totalCost: 1200
-    },
-    {
-      id: 'wo2',
-      vehicleId: 'v2',
-      vehicleInfo: {
-        make: '本田',
-        model: '思域',
-        licensePlate: '京B67890'
-      },
-      customerId: 'user2',
-      customerInfo: {
-        name: '李四',
-        phone: '13900001111'
-      },
-      mechanicId: 'mech2',
-      mechanicInfo: {
-        name: '王师傅',
-        phone: '13922223333'
-      },
-      description: '更换刹车片，更换机油',
-      status: 'completed',
-      priority: 'normal',
-      createdAt: '2023-04-10T09:15:00Z',
-      acceptedAt: '2023-04-10T10:30:00Z',
-      completedAt: '2023-04-10T15:45:00Z',
-      totalCost: 800,
-      feedback: {
-        rating: 5,
-        comment: '服务非常满意，修理得很好'
-      }
-    },
-    {
-      id: 'wo3',
-      vehicleId: 'v3',
-      vehicleInfo: {
-        make: '大众',
-        model: '帕萨特',
-        licensePlate: '京C54321'
-      },
-      customerId: 'user3',
-      customerInfo: {
-        name: '王五',
-        phone: '13700002222'
-      },
-      description: '更换变速箱油',
-      status: 'pending',
-      priority: 'high',
-      createdAt: '2023-05-18T10:45:00Z'
+  try {
+    // 构建查询条件
+    const whereClause = {};
+    
+    if (status) {
+      whereClause.status = status;
     }
-  ];
-  
-  // 计算总数量
-  const total = workOrders.length;
-  
-  logger.info(`管理员查询了工单列表，返回 ${workOrders.length} 条记录`);
-  
-  ctx.body = {
-    status: 'success',
-    data: {
-      workOrders,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / parseInt(limit))
-      }
+    
+    if (customer) {
+      whereClause.customer_id = customer;
     }
-  };
+    
+    if (dateFrom && dateTo) {
+      whereClause.created_at = {
+        [Op.between]: [new Date(dateFrom), new Date(dateTo)]
+      };
+    } else if (dateFrom) {
+      whereClause.created_at = {
+        [Op.gte]: new Date(dateFrom)
+      };
+    } else if (dateTo) {
+      whereClause.created_at = {
+        [Op.lte]: new Date(dateTo)
+      };
+    }
+
+    // 如果按技师筛选，需要通过WorkOrderMechanic表
+    let includeConditions = [
+      {
+        model: Vehicle,
+        as: 'vehicle',
+        attributes: ['vehicle_id', 'make', 'model', 'plate_no'],
+        include: [
+          {
+            model: User,
+            as: 'owner',
+            attributes: ['user_id', 'name']
+          }
+        ]
+      }
+    ];
+
+    if (mechanic) {
+      includeConditions.push({
+        model: WorkOrderMechanic,
+        as: 'mechanics',
+        where: { mechanic_id: mechanic },
+        attributes: ['mechanic_id'],
+        required: true
+      });
+    }
+    
+    // 查询工单列表
+    const { count, rows: workOrders } = await WorkOrder.findAndCountAll({
+      where: whereClause,
+      include: includeConditions,
+      attributes: ['order_id', 'status', 'description', 'created_at', 'finished_at'],
+      offset: (page - 1) * limit,
+      limit: parseInt(limit),
+      order: [['created_at', 'DESC']]
+    });
+
+    // 处理数据
+    const processedWorkOrders = workOrders.map(order => ({
+      id: order.order_id,
+      description: order.description,
+      status: order.status,
+      createdAt: order.created_at,
+      finishedAt: order.finished_at,
+      vehicle: {
+        id: order.vehicle.vehicle_id,
+        make: order.vehicle.make,
+        model: order.vehicle.model,
+        licensePlate: order.vehicle.plate_no
+      },
+      customer: {
+        id: order.vehicle.owner.user_id,
+        name: order.vehicle.owner.name
+      }
+    }));
+    
+    logger.info(`管理员查询了工单列表，返回 ${workOrders.length} 条记录`);
+    
+    ctx.body = {
+      status: 'success',
+      data: {
+        workOrders: processedWorkOrders,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: count,
+          pages: Math.ceil(count / parseInt(limit))
+        }
+      }
+    };
+  } catch (error) {
+    logger.error('获取工单列表失败:', error);
+    throw createError.internal('获取工单列表失败');
+  }
 };
 
 /**
  * @swagger
  * /api/admin/work-orders/{id}:
- *   put:
+ *   get:
+ *     summary: 获取工单详情（管理员视图）
+ *     description: 获取指定工单的详细信息，包括客户、技师、车辆、维修历史等
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 工单ID
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     workOrder:
+ *                       type: object
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 工单不存在
+ *       500:
+ *         description: 服务器错误
+ */
+const getWorkOrderDetail = async (ctx) => {
+  const orderId = ctx.params.id;
+  
+  try {
+    // 从数据库获取工单详情
+    const workOrder = await WorkOrder.findByPk(orderId, {
+      include: [
+        {
+          model: Vehicle,
+          as: 'vehicle',
+          attributes: ['vehicle_id', 'make', 'model', 'year', 'plate_no', 'vin'],
+          include: [
+            {
+              model: User,
+              as: 'owner',
+              attributes: ['user_id', 'name']
+            }
+          ]
+        },
+        {
+          model: WorkOrderMechanic,
+          as: 'mechanics',
+          include: [
+            {
+              model: MechanicProfile,
+              as: 'mechanic',
+              include: [
+                {
+                  model: User,
+                  as: 'user',
+                  attributes: ['user_id', 'name']
+                }
+              ]
+            }
+          ]
+        },
+        {
+          model: WorkOrderMaterial,
+          as: 'materials',
+          include: [
+            {
+              model: Part,
+              as: 'part',
+              attributes: ['part_id', 'name', 'unit']
+            }
+          ]
+        }
+      ]
+    });
+    
+    if (!workOrder) {
+      throw createError.notFound('工单不存在');
+    }
+
+    // 计算总费用
+    const costBreakdown = await workOrder.calculateTotalCost();
+
+    const workOrderDetail = {
+      id: workOrder.order_id,
+      description: workOrder.description,
+      status: workOrder.status,
+      createdAt: workOrder.created_at,
+      finishedAt: workOrder.finished_at,
+      cancelReason: workOrder.cancel_reason,
+      vehicle: {
+        id: workOrder.vehicle.vehicle_id,
+        make: workOrder.vehicle.make,
+        model: workOrder.vehicle.model,
+        year: workOrder.vehicle.year,
+        licensePlate: workOrder.vehicle.plate_no,
+        vin: workOrder.vehicle.vin
+      },
+      customer: {
+        id: workOrder.vehicle.owner.user_id,
+        name: workOrder.vehicle.owner.name
+      },
+      mechanics: workOrder.mechanics.map(wom => ({
+        id: wom.mechanic.user.user_id,
+        name: wom.mechanic.user.name,
+        trade: wom.mechanic.trade,
+        hoursWorked: wom.hours_worked,
+        status: wom.status,
+        note: wom.note,
+        acceptedAt: wom.accepted_at
+      })),
+      materials: workOrder.materials.map(wom => ({
+        id: wom.part.part_id,
+        name: wom.part.name,
+        unit: wom.part.unit,
+        quantity: wom.qty,
+        unitPrice: parseFloat(wom.price),
+        totalPrice: parseFloat(wom.price) * wom.qty
+      })),
+      costBreakdown: {
+        materialCost: costBreakdown.material_cost,
+        laborCost: costBreakdown.labor_cost,
+        totalCost: costBreakdown.material_cost + costBreakdown.labor_cost
+      }
+    };
+    
+    logger.info(`管理员查看了工单 ${orderId} 的详细信息`);
+    
+    ctx.body = {
+      status: 'success',
+      data: {
+        workOrder: workOrderDetail
+      }
+    };
+  } catch (error) {
+    if (error.status) {
+      throw error;
+    }
+    logger.error(`获取工单详情失败 (ID: ${orderId}):`, error);
+    throw createError.internal('获取工单详情失败');
+  }
+};
+
+/**
+ * @swagger
+ * /api/admin/work-orders/{id}:
+ *   patch:
  *     summary: 更新工单信息（管理员操作）
- *     description: 管理员更新工单的状态、优先级、分配技师等信息
+ *     description: 管理员更新工单的状态、描述等信息
  *     tags: [Admin]
  *     parameters:
  *       - in: path
@@ -379,19 +509,14 @@ const listWorkOrders = async (ctx) => {
  *             properties:
  *               status:
  *                 type: string
- *                 enum: [pending, accepted, in_progress, completed, cancelled]
- *               priority:
- *                 type: string
- *                 enum: [low, normal, high, urgent]
- *               mechanicId:
- *                 type: string
+ *                 enum: [pending, assigned, in_progress, done, cancel]
+ *                 description: 工单状态
  *               description:
  *                 type: string
- *               estimatedCompletionTime:
+ *                 description: 工单描述
+ *               cancelReason:
  *                 type: string
- *                 format: date-time
- *               estimatedCost:
- *                 type: number
+ *                 description: 取消原因（状态为cancel时）
  *     responses:
  *       200:
  *         description: 成功
@@ -420,73 +545,59 @@ const updateWorkOrder = async (ctx) => {
   const orderId = ctx.params.id;
   const updateData = ctx.request.body;
   
-  // 获取工单信息（从数据库）
-  // 实际项目中替换为数据库查询
-  const workOrder = {
-    id: orderId,
-    status: 'pending',
-    vehicleId: 'v1',
-    customerId: 'user1',
-    mechanicId: null
-  };
-  
-  // 检查工单是否存在
-  if (!workOrder) {
-    throw createError.notFound('工单不存在');
-  }
-  
-  // 验证更新数据
-  const allowedFields = ['status', 'priority', 'mechanicId', 'description', 'estimatedCompletionTime', 'estimatedCost'];
-  const updates = {};
-  
-  Object.keys(updateData).forEach(key => {
-    if (allowedFields.includes(key)) {
-      updates[key] = updateData[key];
-    }
-  });
-  
-  if (Object.keys(updates).length === 0) {
-    throw createError.validation('没有提供有效的更新字段');
-  }
-  
-  // 特殊字段验证
-  if (updates.status && !['pending', 'accepted', 'in_progress', 'completed', 'cancelled'].includes(updates.status)) {
-    throw createError.validation('无效的状态值');
-  }
-  
-  if (updates.priority && !['low', 'normal', 'high', 'urgent'].includes(updates.priority)) {
-    throw createError.validation('无效的优先级值');
-  }
-  
-  if (updates.mechanicId) {
-    // 检查技师是否存在
-    // 实际项目中替换为数据库查询
-    const mechanicExists = true;
+  try {
+    // 获取工单信息
+    const workOrder = await WorkOrder.findByPk(orderId);
     
-    if (!mechanicExists) {
-      throw createError.validation('指定的技师不存在');
+    if (!workOrder) {
+      throw createError.notFound('工单不存在');
     }
     
-    // 如果工单状态是待分配，且分配了技师，则更新状态为已接受
-    if (workOrder.status === 'pending' && !workOrder.mechanicId) {
-      updates.status = 'accepted';
-      updates.acceptedAt = new Date().toISOString();
+    // 验证更新数据
+    const allowedFields = ['status', 'description', 'cancel_reason'];
+    const updates = {};
+    
+    Object.keys(updateData).forEach(key => {
+      const mappedKey = key === 'cancelReason' ? 'cancel_reason' : key;
+      if (allowedFields.includes(mappedKey)) {
+        updates[mappedKey] = updateData[key];
+      }
+    });
+    
+    if (Object.keys(updates).length === 0) {
+      throw createError.validation('没有提供有效的更新字段');
     }
+    
+    // 特殊字段验证
+    if (updates.status && !['pending', 'assigned', 'in_progress', 'done', 'cancel'].includes(updates.status)) {
+      throw createError.validation('无效的状态值');
+    }
+    
+    // 如果设置为完成状态，自动设置完成时间
+    if (updates.status === 'done' && !workOrder.finished_at) {
+      updates.finished_at = new Date();
+    }
+    
+    // 更新工单信息
+    await workOrder.update(updates);
+    
+    logger.info(`管理员更新了工单 ${orderId} 的信息`);
+    
+    ctx.body = {
+      status: 'success',
+      message: '工单信息已更新',
+      data: {
+        orderId,
+        updatedFields: Object.keys(updates)
+      }
+    };
+  } catch (error) {
+    if (error.status) {
+      throw error;
+    }
+    logger.error(`更新工单信息失败 (ID: ${orderId}):`, error);
+    throw createError.internal('更新工单信息失败');
   }
-  
-  // 更新工单信息（在数据库中）
-  // 实际项目中替换为数据库更新操作
-  
-  logger.info(`管理员更新了工单 ${orderId} 的信息`);
-  
-  ctx.body = {
-    status: 'success',
-    message: '工单信息已更新',
-    data: {
-      orderId,
-      updatedFields: Object.keys(updates)
-    }
-  };
 };
 
 /**
@@ -528,166 +639,50 @@ const updateWorkOrder = async (ctx) => {
 const deleteWorkOrder = async (ctx) => {
   const orderId = ctx.params.id;
   
-  // 获取工单信息（从数据库）
-  // 实际项目中替换为数据库查询
-  const workOrder = {
-    id: orderId,
-    status: 'pending'
-  };
-  
-  // 检查工单是否存在
-  if (!workOrder) {
-    throw createError.notFound('工单不存在');
-  }
-  
-  // 检查工单状态，只允许删除待处理或已取消的工单
-  if (!['pending', 'cancelled'].includes(workOrder.status)) {
-    throw createError.conflict(`状态为 ${workOrder.status} 的工单不能删除，请先取消工单`);
-  }
-  
-  // 删除工单（在数据库中）
-  // 实际项目中替换为数据库删除操作
-  // 注意：实际应用中可能使用软删除（更新状态）而不是硬删除
-  
-  logger.info(`管理员删除了工单 ${orderId}`);
-  
-  ctx.body = {
-    status: 'success',
-    message: '工单已删除'
-  };
-};
-
-/**
- * @swagger
- * /api/admin/workorders/{id}:
- *   get:
- *     summary: 获取工单详情（管理员视图）
- *     description: 获取指定工单的详细信息，包括客户、技师、车辆、维修历史等
- *     tags: [Admin]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: 工单ID
- *     responses:
- *       200:
- *         description: 成功
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: success
- *                 data:
- *                   type: object
- *                   properties:
- *                     workOrder:
- *                       type: object
- *       401:
- *         description: 未授权
- *       404:
- *         description: 工单不存在
- *       500:
- *         description: 服务器错误
- */
-const getWorkOrderDetail = async (ctx) => {
-  const orderId = ctx.params.id;
-  
-  // 从数据库获取工单详情
-  // 实际项目中替换为数据库查询
-  const workOrder = {
-    id: orderId,
-    vehicleId: 'v1',
-    vehicleInfo: {
-      id: 'v1',
-      make: '丰田',
-      model: '卡罗拉',
-      year: 2020,
-      licensePlate: '京A12345',
-      vin: 'ABC123456789'
-    },
-    customerId: 'user1',
-    customerInfo: {
-      id: 'user1',
-      name: '张三',
-      phone: '13800138000',
-      email: 'zhang@example.com'
-    },
-    mechanicId: 'mech1',
-    mechanicInfo: {
-      id: 'mech1',
-      name: '李师傅',
-      phone: '13911112222',
-      specialization: '发动机维修'
-    },
-    description: '发动机异响，怠速不稳',
-    status: 'in_progress',
-    priority: 'normal',
-    createdAt: '2023-05-15T08:30:00Z',
-    acceptedAt: '2023-05-15T09:45:00Z',
-    estimatedCompletionTime: '2023-05-17T16:00:00Z',
-    actualCompletionTime: null,
-    estimatedCost: 1200,
-    actualCost: null,
-    materials: [
-      {
-        id: 'mat1',
-        name: '火花塞',
-        quantity: 4,
-        unitPrice: 150,
-        totalPrice: 600
-      },
-      {
-        id: 'mat2',
-        name: '机油',
-        quantity: 1,
-        unitPrice: 300,
-        totalPrice: 300
-      }
-    ],
-    progressHistory: [
-      {
-        timestamp: '2023-05-15T09:45:00Z',
-        status: 'accepted',
-        note: '已接受工单，开始检查车辆',
-        mechanic: '李师傅'
-      },
-      {
-        timestamp: '2023-05-15T11:30:00Z',
-        status: 'in_progress',
-        note: '已确认问题，开始更换火花塞',
-        mechanic: '李师傅'
-      },
-      {
-        timestamp: '2023-05-16T10:15:00Z',
-        status: 'in_progress',
-        note: '火花塞更换完成，正在更换机油',
-        mechanic: '李师傅'
-      }
-    ],
-    feedback: null,
-    totalLaborCost: 500,
-    totalMaterialCost: 900,
-    totalCost: 1400
-  };
-  
-  // 检查工单是否存在
-  if (!workOrder) {
-    throw createError.notFound('工单不存在');
-  }
-  
-  logger.info(`管理员查看了工单 ${orderId} 的详细信息`);
-  
-  ctx.body = {
-    status: 'success',
-    data: {
-      workOrder
+  try {
+    // 获取工单信息
+    const workOrder = await WorkOrder.findByPk(orderId);
+    
+    if (!workOrder) {
+      throw createError.notFound('工单不存在');
     }
-  };
+    
+    // 检查工单状态，只允许删除待处理或已取消的工单
+    if (!['pending', 'cancel'].includes(workOrder.status)) {
+      throw createError.conflict(`状态为 ${workOrder.status} 的工单不能删除，请先取消工单`);
+    }
+    
+    // 使用事务删除工单及相关记录
+    await WorkOrder.sequelize.transaction(async (t) => {
+      // 删除关联的技师分配记录
+      await WorkOrderMechanic.destroy({
+        where: { order_id: orderId },
+        transaction: t
+      });
+      
+      // 删除关联的材料使用记录
+      await WorkOrderMaterial.destroy({
+        where: { order_id: orderId },
+        transaction: t
+      });
+      
+      // 删除工单
+      await workOrder.destroy({ transaction: t });
+    });
+    
+    logger.info(`管理员删除了工单 ${orderId}`);
+    
+    ctx.body = {
+      status: 'success',
+      message: '工单已删除'
+    };
+  } catch (error) {
+    if (error.status) {
+      throw error;
+    }
+    logger.error(`删除工单失败 (ID: ${orderId}):`, error);
+    throw createError.internal('删除工单失败');
+  }
 };
 
 module.exports = {

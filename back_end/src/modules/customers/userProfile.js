@@ -1,5 +1,8 @@
+const { User, Vehicle, WorkOrder } = require('../../models');
 const { createError } = require('../../middleware/errorhandler');
 const { createLogger } = require('../../middleware/logger');
+const bcrypt = require('bcrypt');
+const { Op } = require('sequelize');
 
 const logger = createLogger('CustomerProfile');
 
@@ -33,14 +36,7 @@ const logger = createLogger('CustomerProfile');
  *                           type: string
  *                         username:
  *                           type: string
- *                         email:
- *                           type: string
- *                           format: email
- *                         phone:
- *                           type: string
  *                         fullName:
- *                           type: string
- *                         address:
  *                           type: string
  *                         createdAt:
  *                           type: string
@@ -55,28 +51,62 @@ const logger = createLogger('CustomerProfile');
  *         description: 服务器错误
  */
 const getMyProfile = async (ctx) => {
-  const { user } = ctx.state;
-  
-  // 获取用户详细信息（从数据库）
-  // 实际项目中替换为数据库查询
-  const userDetails = {
-    id: user.id,
-    username: user.username,
-    email: user.email,
-    phone: '13800138000',
-    fullName: '张三',
-    address: '北京市朝阳区XX街XX号',
-    createdAt: new Date('2023-01-01'),
-    vehicleCount: 2,
-    orderCount: 5
-  };
-  
-  ctx.body = {
-    status: 'success',
-    data: {
-      user: userDetails
+  try {
+    const { user } = ctx.state;
+    
+    // 获取用户详细信息
+    const userDetails = await User.findOne({
+      where: { user_id: user.id },
+      attributes: ['user_id', 'name', 'role', 'created_at']
+    });
+    
+    if (!userDetails) {
+      throw createError.notFound('用户不存在');
     }
-  };
+    
+    // 获取用户车辆数量
+    const vehicleCount = await Vehicle.count({
+      where: { user_id: user.id }
+    });
+    
+    // 获取用户工单数量
+    const orderCount = await WorkOrder.count({
+      include: [
+        {
+          model: Vehicle,
+          as: 'vehicle',
+          where: { user_id: user.id },
+          attributes: []
+        }
+      ]
+    });
+    
+    const profileData = {
+      id: userDetails.user_id,
+      username: userDetails.name,
+      role: userDetails.role,
+      createdAt: userDetails.created_at,
+      vehicleCount,
+      orderCount
+    };
+    
+    logger.info(`用户 ${user.id} 获取了个人资料信息`);
+    
+    ctx.body = {
+      status: 'success',
+      data: {
+        user: profileData
+      }
+    };
+  } catch (error) {
+    logger.error(`获取用户资料失败: ${error.message}`);
+    
+    if (error.isOperational) {
+      throw error;
+    }
+    
+    throw createError.internal('获取用户资料失败');
+  }
 };
 
 /**
@@ -98,20 +128,14 @@ const getMyProfile = async (ctx) => {
  *               fullName:
  *                 type: string
  *                 description: 姓名
- *               phone:
- *                 type: string
- *                 description: 电话号码
- *               address:
- *                 type: string
- *                 description: 地址
- *               email:
- *                 type: string
- *                 format: email
- *                 description: 电子邮箱
  *               password:
  *                 type: string
  *                 format: password
  *                 description: 新密码
+ *               currentPassword:
+ *                 type: string
+ *                 format: password
+ *                 description: 当前密码（更新密码时必填）
  *     responses:
  *       200:
  *         description: 成功
@@ -141,41 +165,90 @@ const getMyProfile = async (ctx) => {
  *         description: 服务器错误
  */
 const updateMyProfile = async (ctx) => {
-  const { user } = ctx.state;
-  const updateData = ctx.request.body;
-  
-  // 验证更新数据
-  const allowedFields = ['fullName', 'phone', 'address', 'email', 'password'];
-  const updates = {};
-  
-  Object.keys(updateData).forEach(key => {
-    if (allowedFields.includes(key)) {
-      updates[key] = updateData[key];
+  try {
+    const { user } = ctx.state;
+    const updateData = ctx.request.body;
+    
+    // 验证更新数据
+    const allowedFields = ['fullName', 'password'];
+    const updates = {};
+    
+    Object.keys(updateData).forEach(key => {
+      if (allowedFields.includes(key) && updateData[key] !== undefined) {
+        if (key === 'fullName') {
+          updates.name = updateData[key];
+        } else if (key === 'password') {
+          // 密码单独处理，不直接加入updates
+          // 稍后会处理密码加密
+        }
+      }
+    });
+    
+    // 检查是否有有效的更新字段
+    const hasValidUpdates = Object.keys(updates).length > 0 || updateData.password;
+    
+    if (!hasValidUpdates) {
+      throw createError.validation('没有提供有效的更新字段');
     }
-  });
-  
-  if (Object.keys(updates).length === 0) {
-    throw createError.validation('没有提供有效的更新字段');
-  }
-  
-  // 处理密码更新
-  if (updates.password) {
-    // 实际项目中应该验证旧密码
-    // const bcrypt = require('bcrypt');
-    // updates.password = await bcrypt.hash(updates.password, 10);
-    logger.info(`用户 ${user.id} 更新了密码`);
-  }
-  
-  // 更新用户信息（在数据库中）
-  // 实际项目中替换为数据库更新操作
-  
-  ctx.body = {
-    status: 'success',
-    message: '个人资料已更新',
-    data: {
-      updatedFields: Object.keys(updates)
+    
+    // 获取当前用户信息
+    const currentUser = await User.findOne({
+      where: { user_id: user.id },
+      attributes: ['user_id', 'name', 'password_hash']
+    });
+    
+    if (!currentUser) {
+      throw createError.notFound('用户不存在');
     }
-  };
+    
+    // 处理密码更新
+    if (updateData.password) {
+      if (!updateData.currentPassword) {
+        throw createError.validation('更新密码时必须提供当前密码');
+      }
+      
+      // 验证当前密码
+      const isCurrentPasswordValid = await bcrypt.compare(updateData.currentPassword, currentUser.password_hash);
+      if (!isCurrentPasswordValid) {
+        throw createError.authentication('当前密码错误');
+      }
+      
+      // 加密新密码
+      const salt = await bcrypt.genSalt(10);
+      updates.password_hash = await bcrypt.hash(updateData.password, salt);
+      
+      logger.info(`用户 ${user.id} 更新了密码`);
+    }
+    
+    // 更新用户信息
+    await User.update(updates, {
+      where: { user_id: user.id }
+    });
+    
+    const updatedFields = Object.keys(updates).map(key => {
+      if (key === 'name') return 'fullName';
+      if (key === 'password_hash') return 'password';
+      return key;
+    });
+    
+    logger.info(`用户 ${user.id} 更新了个人资料: ${updatedFields.join(', ')}`);
+    
+    ctx.body = {
+      status: 'success',
+      message: '个人资料已更新',
+      data: {
+        updatedFields
+      }
+    };
+  } catch (error) {
+    logger.error(`更新用户资料失败: ${error.message}`);
+    
+    if (error.isOperational) {
+      throw error;
+    }
+    
+    throw createError.internal('更新用户资料失败');
+  }
 };
 
 module.exports = {

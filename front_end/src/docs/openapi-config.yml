@@ -1,0 +1,26 @@
+inputSpec: ./src/docs/openapi.json
+outputDir: ./src/api/generated
+generatorName: javascript
+additionalProperties:
+  supportsES6: true
+  modelPropertyNaming: camelCase
+  enumPropertyNaming: UPPERCASE
+  withSeparateModelsAndApi: true
+  withInterfaces: true
+  npmName: "@api/client"
+  npmVersion: "1.0.0"
+  useSingleRequestParameter: true
+templateDir: null
+typeMappings:
+  DateTime: Date
+importMappings:
+  Date: Date
+generateApis: true
+generateApiDocs: true
+generateModels: true
+generateModelDocs: true
+skipValidateSpec: false
+logToStderr: false
+removeOperationIdPrefix: true
+apiPackage: api
+modelPackage: models

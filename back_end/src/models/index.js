@@ -1,27 +1,36 @@
 /**
  * 模型索引文件 - Models Index
  * 
- * 统一导出所有数据模型，方便其他模块引用
+ * 统一导出所有数据模型，初始化Sequelize连接并设置模型关联
  */
 
-const User = require('./User');
-const Vehicle = require('./Vehicle');
-const MechanicProfile = require('./MechanicProfile');
-const Part = require('./Part');
-const InventoryTxn = require('./InventoryTxn');
-const WorkOrder = require('./WorkOrder');
-const WorkOrderMechanic = require('./WorkOrderMechanic');
-const WorkOrderMaterial = require('./WorkOrderMaterial');
-const Payment = require('./Payment');
-const Feedback = require('./Feedback');
+const { Sequelize } = require('sequelize');
+const config = require('../config/database');
 
-// 保留原有的模型（如果需要兼容）
-const Customer = require('./Customer');
-const Technician = require('./Technician');
-const RepairOrder = require('./RepairOrder');
+// 创建Sequelize实例
+const sequelize = new Sequelize(config.database, config.username, config.password, {
+  host: config.host,
+  port: config.port,
+  dialect: config.dialect,
+  logging: config.logging,
+  pool: config.pool,
+  timezone: '+08:00'
+});
 
-module.exports = {
-  // 核心业务模型（推荐使用）
+// 导入所有模型
+const User = require('./User')(sequelize);
+const Vehicle = require('./Vehicle')(sequelize);
+const MechanicProfile = require('./MechanicProfile')(sequelize);
+const Part = require('./Part')(sequelize);
+const InventoryTxn = require('./InventoryTxn')(sequelize);
+const WorkOrder = require('./RepairOrder')(sequelize); // RepairOrder文件现在导出WorkOrder模型
+const WorkOrderMechanic = require('./WorkOrderMechanic')(sequelize);
+const WorkOrderMaterial = require('./WorkOrderMaterial')(sequelize);
+const Payment = require('./Payment')(sequelize);
+const Feedback = require('./Feedback')(sequelize);
+
+// 设置模型关联关系
+const models = {
   User,
   Vehicle,
   MechanicProfile,
@@ -31,9 +40,21 @@ module.exports = {
   WorkOrderMechanic,
   WorkOrderMaterial,
   Payment,
-  Feedback,
-  
+  Feedback
+};
 
+// 执行所有模型的关联设置
+Object.keys(models).forEach(modelName => {
+  if (models[modelName].associate) {
+    models[modelName].associate(models);
+  }
+});
+
+// 导出数据库实例和所有模型
+module.exports = {
+  sequelize,
+  Sequelize,
+  ...models
 };
 
 /**
@@ -52,20 +73,22 @@ module.exports = {
  */
 
 /**
- * 模型迁移指南：
- * 
- * 从兼容性模型迁移到新模型的建议：
- * 
- * 1. Customer → User
- *    - 将客户数据迁移到users表，设置role='customer'
- *    - 更新所有引用Customer的代码
- * 
- * 2. Technician → User + MechanicProfile
- *    - 将技师基本信息迁移到users表，设置role='mechanic'
- *    - 将技师专业信息迁移到mechanic_profiles表
- * 
- * 3. RepairOrder → WorkOrder
- *    - 将维修订单数据迁移到work_orders表
- *    - 更新状态枚举值以匹配新设计
- *    - 建立与新关联表的关系
- */ 
+ * 数据库初始化方法
+ */
+const initDatabase = async () => {
+  try {
+    // 测试数据库连接
+    await sequelize.authenticate();
+    console.log('数据库连接成功');
+
+    // 同步所有模型到数据库
+    await sequelize.sync({ force: false }); // 设置force: true会删除所有表重新创建
+    console.log('数据库表结构同步完成');
+
+  } catch (error) {
+    console.error('数据库初始化失败:', error);
+    throw error;
+  }
+};
+
+module.exports.initDatabase = initDatabase; 

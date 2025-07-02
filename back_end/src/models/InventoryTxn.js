@@ -20,80 +20,252 @@
  * - 出库记录关联到具体的工单
  */
 
-class InventoryTxn {
-  constructor(db) {
-    this.db = db;
-    this.tableName = 'inventory_txns';
-  }
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     InventoryTxn:
+ *       type: object
+ *       properties:
+ *         txn_id:
+ *           type: integer
+ *           description: 交易记录唯一标识符
+ *         part_id:
+ *           type: integer
+ *           description: 配件ID
+ *         order_id:
+ *           type: integer
+ *           description: 工单ID（出库时关联）
+ *         qty:
+ *           type: integer
+ *           description: 数量（正数为入库，负数为出库）
+ *         type:
+ *           type: string
+ *           enum: [IN, OUT, ADJUST]
+ *           description: 交易类型
+ *         created_at:
+ *           type: string
+ *           format: date-time
+ *           description: 交易时间
+ */
 
-  // 创建库存交易表
-  async createTable() {
-    const sql = `
-      CREATE TABLE IF NOT EXISTS ${this.tableName} (
-        txn_id BIGINT PRIMARY KEY AUTO_INCREMENT,
-        part_id BIGINT NOT NULL,
-        order_id BIGINT,
-        qty INT NOT NULL,
-        type ENUM('IN','OUT','ADJUST') NOT NULL,
-        unit_cost DECIMAL(10,2),
-        total_cost DECIMAL(10,2),
-        reason TEXT,
-        operator_id BIGINT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (part_id) REFERENCES parts(part_id),
-        FOREIGN KEY (order_id) REFERENCES work_orders(order_id),
-        FOREIGN KEY (operator_id) REFERENCES users(user_id),
-        INDEX idx_part_id (part_id),
-        INDEX idx_order_id (order_id),
-        INDEX idx_type (type),
-        INDEX idx_created_at (created_at)
-      )`;
-    // 执行SQL创建表
-  }
+const { DataTypes } = require('sequelize');
 
-  // 记录入库
-  async recordInbound(partId, quantity, unitCost, reason, operatorId) {
-    // 创建入库记录
-    // 更新配件库存
-  }
+module.exports = (sequelize) => {
+  const InventoryTxn = sequelize.define('InventoryTxn', {
+    txn_id: {
+      type: DataTypes.BIGINT,
+      primaryKey: true,
+      autoIncrement: true,
+      field: 'txn_id'
+    },
+    part_id: {
+      type: DataTypes.BIGINT,
+      allowNull: false,
+      field: 'part_id',
+      references: {
+        model: 'parts',
+        key: 'part_id'
+      }
+    },
+    order_id: {
+      type: DataTypes.BIGINT,
+      field: 'order_id',
+      references: {
+        model: 'work_orders',
+        key: 'order_id'
+      }
+    },
+    qty: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      field: 'qty'
+    },
+    type: {
+      type: DataTypes.ENUM('IN', 'OUT', 'ADJUST'),
+      allowNull: false,
+      field: 'type'
+    },
+    created_at: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      field: 'created_at'
+    }
+  }, {
+    tableName: 'inventory_txns',
+    timestamps: false,
+    indexes: [
+      {
+        fields: ['part_id']
+      },
+      {
+        fields: ['order_id']
+      },
+      {
+        fields: ['type']
+      },
+      {
+        fields: ['created_at']
+      }
+    ]
+  });
 
-  // 记录出库（用于工单）
-  async recordOutbound(partId, quantity, orderId, operatorId) {
-    // 创建出库记录
-    // 更新配件库存
-    // 验证库存是否充足
-  }
+  // 类方法：记录入库
+  InventoryTxn.recordInbound = async function(partId, quantity, operatorId = null) {
+    return await InventoryTxn.create({
+      part_id: partId,
+      qty: Math.abs(quantity), // 入库数量为正数
+      type: 'IN'
+    });
+  };
 
-  // 记录库存调整
-  async recordAdjustment(partId, quantity, reason, operatorId) {
-    // 创建调整记录
-    // 更新配件库存
-  }
+  // 类方法：记录出库（用于工单）
+  InventoryTxn.recordOutbound = async function(partId, quantity, orderId, operatorId = null) {
+    // 检查库存是否充足
+    const currentStock = await InventoryTxn.getCurrentStock(partId);
+    if (currentStock < quantity) {
+      throw new Error(`库存不足，当前库存：${currentStock}，需要：${quantity}`);
+    }
 
-  // 获取配件的库存交易历史
-  async getPartHistory(partId, dateRange) {
-    // 返回指定配件的所有交易记录
-  }
+    return await InventoryTxn.create({
+      part_id: partId,
+      order_id: orderId,
+      qty: -Math.abs(quantity), // 出库数量为负数
+      type: 'OUT'
+    });
+  };
 
-  // 获取工单的配件使用记录
-  async getOrderParts(orderId) {
-    // 返回工单使用的所有配件
-  }
+  // 类方法：记录库存调整
+  InventoryTxn.recordAdjustment = async function(partId, quantity, reason, operatorId = null) {
+    return await InventoryTxn.create({
+      part_id: partId,
+      qty: quantity, // 调整数量可正可负
+      type: 'ADJUST'
+    });
+  };
 
-  // 计算库存价值
-  async calculateInventoryValue(date) {
-    // 计算指定日期的库存总价值
-  }
+  // 类方法：获取配件当前库存
+  InventoryTxn.getCurrentStock = async function(partId) {
+    const result = await InventoryTxn.findAll({
+      where: { part_id: partId },
+      attributes: [
+        [sequelize.fn('SUM', sequelize.col('qty')), 'total_qty']
+      ],
+      raw: true
+    });
+    return parseInt(result[0].total_qty) || 0;
+  };
 
-  // 获取库存变动报表
-  async getInventoryReport(startDate, endDate) {
-    // 返回期间内的库存变动统计
-  }
+  // 类方法：获取配件库存历史
+  InventoryTxn.getPartHistory = async function(partId, startDate, endDate) {
+    const whereClause = { part_id: partId };
+    
+    if (startDate && endDate) {
+      whereClause.created_at = {
+        [sequelize.Sequelize.Op.between]: [startDate, endDate]
+      };
+    }
 
-  // 批量出库（用于工单）
-  async batchOutbound(orderId, parts, operatorId) {
-    // 批量处理多个配件的出库
-  }
-}
+    return await InventoryTxn.findAll({
+      where: whereClause,
+      include: [
+        {
+          model: sequelize.models.Part,
+          as: 'part',
+          attributes: ['name', 'unit']
+        },
+        {
+          model: sequelize.models.WorkOrder,
+          as: 'workOrder',
+          attributes: ['order_id', 'description'],
+          required: false
+        }
+      ],
+      order: [['created_at', 'DESC']]
+    });
+  };
 
-module.exports = InventoryTxn; 
+  // 类方法：获取工单的配件使用记录
+  InventoryTxn.getOrderParts = async function(orderId) {
+    return await InventoryTxn.findAll({
+      where: { 
+        order_id: orderId,
+        type: 'OUT'
+      },
+      include: [{
+        model: sequelize.models.Part,
+        as: 'part',
+        attributes: ['name', 'unit', 'unit_cost']
+      }]
+    });
+  };
+
+  // 类方法：获取库存变动报表
+  InventoryTxn.getInventoryReport = async function(startDate, endDate) {
+    const whereClause = {};
+    
+    if (startDate && endDate) {
+      whereClause.created_at = {
+        [sequelize.Sequelize.Op.between]: [startDate, endDate]
+      };
+    }
+
+    return await InventoryTxn.findAll({
+      where: whereClause,
+      include: [{
+        model: sequelize.models.Part,
+        as: 'part',
+        attributes: ['name', 'unit']
+      }],
+      attributes: [
+        'part_id',
+        'type',
+        [sequelize.fn('SUM', sequelize.col('qty')), 'total_qty'],
+        [sequelize.fn('COUNT', sequelize.col('txn_id')), 'transaction_count']
+      ],
+      group: ['part_id', 'type'],
+      order: [['part_id', 'ASC']]
+    });
+  };
+
+  // 类方法：批量出库（用于工单）
+  InventoryTxn.batchOutbound = async function(orderId, parts, operatorId = null) {
+    const transactions = [];
+    
+    for (const part of parts) {
+      const { partId, quantity } = part;
+      
+      // 检查库存
+      const currentStock = await InventoryTxn.getCurrentStock(partId);
+      if (currentStock < quantity) {
+        throw new Error(`配件 ${partId} 库存不足，当前库存：${currentStock}，需要：${quantity}`);
+      }
+      
+      transactions.push({
+        part_id: partId,
+        order_id: orderId,
+        qty: -Math.abs(quantity),
+        type: 'OUT'
+      });
+    }
+    
+    return await InventoryTxn.bulkCreate(transactions);
+  };
+
+  // 定义关联关系
+  InventoryTxn.associate = function(models) {
+    // 库存交易属于一个配件
+    InventoryTxn.belongsTo(models.Part, {
+      foreignKey: 'part_id',
+      as: 'part'
+    });
+
+    // 库存交易可能关联一个工单
+    InventoryTxn.belongsTo(models.WorkOrder, {
+      foreignKey: 'order_id',
+      as: 'workOrder'
+    });
+  };
+
+  return InventoryTxn;
+}; 

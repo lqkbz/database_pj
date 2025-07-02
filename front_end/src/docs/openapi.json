@@ -1,0 +1,5639 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "车辆维修管理系统 API",
+    "version": "1.0.0",
+    "description": "车辆维修管理系统的RESTful API文档",
+    "contact": {
+      "name": "API Support",
+      "email": "support@example.com"
+    }
+  },
+  "servers": [
+    {
+      "url": "/api/v1",
+      "description": "车辆维修管理系统API服务"
+    }
+  ],
+  "tags": [
+    {
+      "name": "auth",
+      "description": "认证相关接口"
+    },
+    {
+      "name": "admin",
+      "description": "管理员相关接口"
+    },
+    {
+      "name": "mechanic",
+      "description": "维修工相关接口"
+    },
+    {
+      "name": "customers",
+      "description": "客户相关接口"
+    },
+    {
+      "name": "system",
+      "description": "系统相关接口"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "Feedback": {
+        "type": "object",
+        "properties": {
+          "feedback_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "反馈唯一标识符"
+          },
+          "order_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "工单ID"
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "反馈人用户ID"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "rating",
+              "urge"
+            ],
+            "description": "反馈类型"
+          },
+          "rating": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "description": "评分（1-5分）"
+          },
+          "comment": {
+            "type": "string",
+            "description": "评价内容"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "创建时间"
+          }
+        },
+        "required": [
+          "feedback_id",
+          "order_id",
+          "user_id",
+          "type",
+          "comment"
+        ]
+      },
+      "InventoryTxn": {
+        "type": "object",
+        "properties": {
+          "txn_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "交易唯一标识符"
+          },
+          "part_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "配件ID"
+          },
+          "order_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "工单ID（出库时使用，可空）"
+          },
+          "qty": {
+            "type": "integer",
+            "description": "数量（正负表示增减）"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "IN",
+              "OUT",
+              "ADJUST"
+            ],
+            "description": "交易类型"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "交易时间"
+          }
+        },
+        "required": [
+          "txn_id",
+          "part_id",
+          "qty",
+          "type"
+        ]
+      },
+      "MechanicProfile": {
+        "type": "object",
+        "properties": {
+          "mechanic_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "技师ID（等于user_id）"
+          },
+          "trade": {
+            "type": "string",
+            "enum": [
+              "engine",
+              "paint",
+              "electric"
+            ],
+            "description": "专业领域"
+          },
+          "hourly_rate": {
+            "type": "number",
+            "format": "float",
+            "description": "时薪"
+          },
+          "hire_date": {
+            "type": "string",
+            "format": "date",
+            "description": "入职日期"
+          },
+          "cert_no": {
+            "type": "string",
+            "description": "资质证书编号"
+          }
+        },
+        "required": [
+          "mechanic_id"
+        ]
+      },
+      "Part": {
+        "type": "object",
+        "properties": {
+          "part_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "配件唯一标识符"
+          },
+          "name": {
+            "type": "string",
+            "description": "配件名称"
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "pcs",
+              "L",
+              "kg"
+            ],
+            "description": "计量单位"
+          },
+          "unit_cost": {
+            "type": "number",
+            "format": "float",
+            "description": "单位成本"
+          }
+        },
+        "required": [
+          "part_id",
+          "name",
+          "unit",
+          "unit_cost"
+        ]
+      },
+      "Payment": {
+        "type": "object",
+        "properties": {
+          "payment_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "支付唯一标识符"
+          },
+          "order_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "工单ID"
+          },
+          "labor_fee": {
+            "type": "number",
+            "format": "float",
+            "description": "人工费"
+          },
+          "material_fee": {
+            "type": "number",
+            "format": "float",
+            "description": "配件费"
+          },
+          "total_fee": {
+            "type": "number",
+            "format": "float",
+            "description": "总费用"
+          },
+          "paid_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "支付时间"
+          }
+        },
+        "required": [
+          "payment_id",
+          "order_id",
+          "labor_fee",
+          "material_fee",
+          "total_fee"
+        ]
+      },
+      "WorkOrder": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "工单唯一标识符"
+          },
+          "vehicle_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "车辆ID"
+          },
+          "customer_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "客户ID"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "assigned",
+              "in_progress",
+              "done",
+              "cancel"
+            ],
+            "description": "工单状态"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "创建时间"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "完成时间"
+          },
+          "description": {
+            "type": "string",
+            "description": "工单描述"
+          },
+          "cancel_reason": {
+            "type": "string",
+            "description": "取消原因"
+          }
+        },
+        "required": [
+          "order_id",
+          "vehicle_id",
+          "customer_id",
+          "status",
+          "description"
+        ]
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "用户唯一标识符"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "customer",
+              "mechanic",
+              "admin"
+            ],
+            "description": "用户角色"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "用户姓名"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "账号创建时间"
+          }
+        },
+        "required": [
+          "user_id",
+          "role",
+          "name"
+        ]
+      },
+      "UserDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/User"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "vehicles": {
+                "type": "array",
+                "description": "用户的车辆（仅customer角色）",
+                "items": {
+                  "$ref": "#/components/schemas/Vehicle"
+                }
+              },
+              "mechanicProfile": {
+                "$ref": "#/components/schemas/MechanicProfile",
+                "description": "技师档案（仅mechanic角色）"
+              },
+              "recentOrders": {
+                "type": "array",
+                "description": "近期工单",
+                "items": {
+                  "$ref": "#/components/schemas/WorkOrderSummary"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "UserCreateRequest": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "customer",
+              "mechanic",
+              "admin"
+            ],
+            "description": "用户角色"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "用户姓名"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "description": "密码"
+          }
+        },
+        "required": [
+          "role",
+          "name",
+          "password"
+        ]
+      },
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "当前页码"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "每页数量"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "总记录数"
+          },
+          "pages": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "总页数"
+          }
+        }
+      },
+      "Vehicle": {
+        "type": "object",
+        "properties": {
+          "vehicle_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "车辆唯一标识符"
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "车主用户ID"
+          },
+          "plate_no": {
+            "type": "string",
+            "description": "车牌号（唯一）"
+          },
+          "vin": {
+            "type": "string",
+            "description": "车辆识别号（车架号）"
+          },
+          "model": {
+            "type": "string",
+            "description": "车型"
+          },
+          "year": {
+            "type": "integer",
+            "format": "int16",
+            "minimum": 1900,
+            "maximum": 2100,
+            "description": "车辆年份"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "创建时间"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "更新时间"
+          }
+        },
+        "required": [
+          "vehicle_id",
+          "user_id",
+          "plate_no"
+        ]
+      },
+      "VehicleDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Vehicle"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "owner": {
+                "$ref": "#/components/schemas/User",
+                "description": "车主信息"
+              },
+              "maintenanceHistory": {
+                "type": "array",
+                "description": "维修历史记录",
+                "items": {
+                  "$ref": "#/components/schemas/WorkOrderSummary"
+                }
+              },
+              "totalRepairs": {
+                "type": "integer",
+                "description": "总维修次数"
+              },
+              "totalCost": {
+                "type": "number",
+                "format": "float",
+                "description": "总维修费用"
+              }
+            }
+          }
+        ]
+      },
+      "VehicleCreateRequest": {
+        "type": "object",
+        "properties": {
+          "plate_no": {
+            "type": "string",
+            "description": "车牌号"
+          },
+          "vin": {
+            "type": "string",
+            "description": "车辆识别号"
+          },
+          "model": {
+            "type": "string",
+            "description": "车型"
+          },
+          "year": {
+            "type": "integer",
+            "format": "int16",
+            "minimum": 1900,
+            "maximum": 2100,
+            "description": "车辆年份"
+          }
+        },
+        "required": [
+          "plate_no"
+        ]
+      },
+      "VehicleUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "vin": {
+            "type": "string",
+            "description": "车辆识别号"
+          },
+          "model": {
+            "type": "string",
+            "description": "车型"
+          },
+          "year": {
+            "type": "integer",
+            "format": "int16",
+            "minimum": 1900,
+            "maximum": 2100,
+            "description": "车辆年份"
+          }
+        }
+      },
+      "WorkOrderSummary": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "工单ID"
+          },
+          "description": {
+            "type": "string",
+            "description": "工单描述"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "assigned",
+              "in_progress",
+              "done",
+              "cancel"
+            ],
+            "description": "工单状态"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "创建时间"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "完成时间"
+          },
+          "total_fee": {
+            "type": "number",
+            "format": "float",
+            "description": "总费用"
+          }
+        }
+      },
+      "WorkOrderMaterial": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "工单ID"
+          },
+          "part_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "配件ID"
+          },
+          "qty": {
+            "type": "integer",
+            "description": "使用数量"
+          },
+          "price": {
+            "type": "number",
+            "format": "float",
+            "description": "单价"
+          }
+        },
+        "required": [
+          "order_id",
+          "part_id",
+          "qty",
+          "price"
+        ]
+      },
+      "WorkOrderMechanic": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "工单ID"
+          },
+          "mechanic_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "技师ID"
+          },
+          "hours_worked": {
+            "type": "number",
+            "format": "float",
+            "description": "工作时长"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "refused",
+              "completed"
+            ],
+            "description": "技师状态"
+          },
+          "note": {
+            "type": "string",
+            "description": "工作备注"
+          }
+        },
+        "required": [
+          "order_id",
+          "mechanic_id"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/admin/cost-structure": {
+      "get": {
+        "summary": "获取成本结构分析报表",
+        "description": "获取指定时间范围内的成本结构分析统计数据",
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "timeRange",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "day",
+                "week",
+                "month",
+                "year"
+              ]
+            },
+            "default": "month",
+            "description": "时间范围"
+          },
+          {
+            "in": "query",
+            "name": "startDate",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "开始日期 (YYYY-MM-DD)"
+          },
+          {
+            "in": "query",
+            "name": "endDate",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "结束日期 (YYYY-MM-DD)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "timeRange": {
+                          "type": "string"
+                        },
+                        "startDate": {
+                          "type": "string"
+                        },
+                        "endDate": {
+                          "type": "string"
+                        },
+                        "totalRevenue": {
+                          "type": "number"
+                        },
+                        "totalCost": {
+                          "type": "number"
+                        },
+                        "grossProfit": {
+                          "type": "number"
+                        },
+                        "grossMargin": {
+                          "type": "number"
+                        },
+                        "costBreakdown": {
+                          "type": "object"
+                        },
+                        "partsCostByCategory": {
+                          "type": "array"
+                        },
+                        "laborCostByType": {
+                          "type": "array"
+                        },
+                        "profitabilityByServiceType": {
+                          "type": "array"
+                        },
+                        "costTrend": {
+                          "type": "array"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/admin/negative-feedback": {
+      "get": {
+        "summary": "获取负面反馈分析报表",
+        "description": "获取指定时间范围内的负面反馈分析统计数据",
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "timeRange",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "day",
+                "week",
+                "month",
+                "year"
+              ]
+            },
+            "default": "month",
+            "description": "时间范围"
+          },
+          {
+            "in": "query",
+            "name": "startDate",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "开始日期 (YYYY-MM-DD)"
+          },
+          {
+            "in": "query",
+            "name": "endDate",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "结束日期 (YYYY-MM-DD)"
+          },
+          {
+            "in": "query",
+            "name": "minRating",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5
+            },
+            "default": 3,
+            "description": "最低评分阈值（小于等于此值的评分被视为负面反馈）"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "timeRange": {
+                          "type": "string"
+                        },
+                        "startDate": {
+                          "type": "string"
+                        },
+                        "endDate": {
+                          "type": "string"
+                        },
+                        "totalFeedback": {
+                          "type": "number"
+                        },
+                        "negativeFeedbackCount": {
+                          "type": "number"
+                        },
+                        "negativeFeedbackRate": {
+                          "type": "number"
+                        },
+                        "averageRating": {
+                          "type": "number"
+                        },
+                        "ratingDistribution": {
+                          "type": "array"
+                        },
+                        "commonIssues": {
+                          "type": "array"
+                        },
+                        "mechanicPerformance": {
+                          "type": "array"
+                        },
+                        "serviceTypeIssues": {
+                          "type": "array"
+                        },
+                        "feedbackTrend": {
+                          "type": "array"
+                        },
+                        "recentNegativeFeedback": {
+                          "type": "array"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/admin/payments": {
+      "get": {
+        "summary": "获取支付记录列表",
+        "description": "获取系统中的支付记录，支持多种过滤条件和分页",
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "default": 1,
+            "description": "页码"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "default": 10,
+            "description": "每页记录数"
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "completed",
+                "failed"
+              ]
+            },
+            "description": "支付状态"
+          },
+          {
+            "in": "query",
+            "name": "startDate",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "开始日期 (YYYY-MM-DD)"
+          },
+          {
+            "in": "query",
+            "name": "endDate",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "结束日期 (YYYY-MM-DD)"
+          },
+          {
+            "in": "query",
+            "name": "customer",
+            "schema": {
+              "type": "string"
+            },
+            "description": "客户ID或姓名"
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "repair",
+                "deposit",
+                "refund"
+              ]
+            },
+            "description": "支付类型"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "payments": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "summary": {
+                          "type": "object",
+                          "properties": {
+                            "totalAmount": {
+                              "type": "number"
+                            },
+                            "refundAmount": {
+                              "type": "number"
+                            },
+                            "pendingAmount": {
+                              "type": "number"
+                            },
+                            "completedCount": {
+                              "type": "integer"
+                            },
+                            "pendingCount": {
+                              "type": "integer"
+                            },
+                            "refundCount": {
+                              "type": "integer"
+                            }
+                          }
+                        },
+                        "pagination": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/admin/payroll": {
+      "get": {
+        "summary": "获取工资单列表",
+        "description": "获取系统中的工资单记录，支持按月份、年份、技师和状态过滤",
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "default": 1,
+            "description": "页码"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "default": 10,
+            "description": "每页记录数"
+          },
+          {
+            "in": "query",
+            "name": "month",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12
+            },
+            "description": "月份（1-12）"
+          },
+          {
+            "in": "query",
+            "name": "year",
+            "schema": {
+              "type": "integer",
+              "minimum": 2000,
+              "maximum": 2100
+            },
+            "description": "年份"
+          },
+          {
+            "in": "query",
+            "name": "mechanic",
+            "schema": {
+              "type": "string"
+            },
+            "description": "技师ID或姓名"
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "paid"
+              ]
+            },
+            "description": "工资单状态"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "payroll": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "summary": {
+                          "type": "object",
+                          "properties": {
+                            "totalPayroll": {
+                              "type": "number"
+                            },
+                            "averagePayroll": {
+                              "type": "number"
+                            },
+                            "totalBasicSalary": {
+                              "type": "number"
+                            },
+                            "totalCommission": {
+                              "type": "number"
+                            },
+                            "totalBonuses": {
+                              "type": "number"
+                            },
+                            "totalDeductions": {
+                              "type": "number"
+                            },
+                            "paidCount": {
+                              "type": "integer"
+                            },
+                            "pendingCount": {
+                              "type": "integer"
+                            }
+                          }
+                        },
+                        "pagination": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/admin/parts": {
+      "get": {
+        "summary": "获取所有零部件列表",
+        "description": "获取系统中所有零部件的列表，支持分页、搜索和过滤",
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "default": 1,
+            "description": "页码"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "default": 10,
+            "description": "每页记录数"
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string"
+            },
+            "description": "搜索关键词（零部件名称、编号等）"
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "schema": {
+              "type": "string"
+            },
+            "description": "零部件类别"
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "inactive",
+                "low_stock",
+                "out_of_stock"
+              ]
+            },
+            "description": "零部件状态"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "parts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "pagination": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/admin/parts/{id}": {
+      "get": {
+        "summary": "获取零部件详情",
+        "description": "获取指定零部件的详细信息，包括基本信息、库存历史等",
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "零部件ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "part": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "404": {
+            "description": "零部件不存在"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/admin/mechanics": {
+      "get": {
+        "summary": "获取所有技师列表",
+        "description": "获取系统中所有技师的列表，支持分页、搜索和过滤",
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "default": 1,
+            "description": "页码"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "default": 10,
+            "description": "每页记录数"
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string"
+            },
+            "description": "搜索关键词（技师姓名、电话、邮箱等）"
+          },
+          {
+            "in": "query",
+            "name": "specialty",
+            "schema": {
+              "type": "string"
+            },
+            "description": "按专业领域筛选"
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "inactive",
+                "suspended"
+              ]
+            },
+            "description": "技师状态"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "mechanics": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "pagination": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      },
+      "post": {
+        "summary": "创建新技师",
+        "description": "在系统中创建一个新的技师账号",
+        "tags": [
+          "Admin"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "phone",
+                  "email",
+                  "specialties",
+                  "qualification"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "技师姓名"
+                  },
+                  "phone": {
+                    "type": "string",
+                    "description": "手机号码"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "description": "电子邮箱"
+                  },
+                  "specialties": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "专业领域"
+                  },
+                  "qualification": {
+                    "type": "string",
+                    "description": "资质/职称"
+                  },
+                  "certification": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "认证证书"
+                  },
+                  "experience": {
+                    "type": "integer",
+                    "description": "工作年限"
+                  },
+                  "workingHours": {
+                    "type": "object",
+                    "description": "工作时间安排"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "创建成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "mechanic": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "409": {
+            "description": "资源冲突（如邮箱或手机号已存在）"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/admin/mechanics/{id}": {
+      "get": {
+        "summary": "获取技师详情",
+        "description": "获取指定技师的详细信息，包括基本信息、当前工单、近期完成工单等",
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "技师ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "mechanic": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "404": {
+            "description": "技师不存在"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      },
+      "patch": {
+        "summary": "更新技师信息",
+        "description": "更新指定技师的信息",
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "技师ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "技师姓名"
+                  },
+                  "phone": {
+                    "type": "string",
+                    "description": "手机号码"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "description": "电子邮箱"
+                  },
+                  "specialties": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "专业领域"
+                  },
+                  "qualification": {
+                    "type": "string",
+                    "description": "资质/职称"
+                  },
+                  "certification": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "认证证书"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "inactive",
+                      "suspended"
+                    ],
+                    "description": "技师状态"
+                  },
+                  "workingHours": {
+                    "type": "object",
+                    "description": "工作时间安排"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "更新成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "mechanicId": {
+                          "type": "string"
+                        },
+                        "updatedFields": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "404": {
+            "description": "技师不存在"
+          },
+          "409": {
+            "description": "资源冲突（如邮箱或手机号已被其他用户使用）"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      },
+      "delete": {
+        "summary": "删除技师",
+        "description": "从系统中删除指定的技师，仅当技师没有进行中的工单时才能删除",
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "技师ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "删除成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "404": {
+            "description": "技师不存在"
+          },
+          "409": {
+            "description": "冲突（如技师有未完成的工单）"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/admin/unfinished-orders": {
+      "get": {
+        "summary": "获取未完成工单统计报表",
+        "description": "获取当前未完成工单的统计数据和分析",
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "overdueDays",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "筛选超过指定天数的逾期工单"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "totalActiveOrders": {
+                          "type": "integer"
+                        },
+                        "statusBreakdown": {
+                          "type": "object"
+                        },
+                        "overdueOrders": {
+                          "type": "integer"
+                        },
+                        "overdueRate": {
+                          "type": "number"
+                        },
+                        "averageWaitTime": {
+                          "type": "object"
+                        },
+                        "ordersByPriority": {
+                          "type": "array"
+                        },
+                        "ordersByMechanic": {
+                          "type": "array"
+                        },
+                        "ordersByServiceType": {
+                          "type": "array"
+                        },
+                        "bottlenecks": {
+                          "type": "array"
+                        },
+                        "mostOverdueOrders": {
+                          "type": "array"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/admin/reports/sales": {
+      "get": {
+        "summary": "获取销售报表",
+        "description": "获取指定时间范围内的销售统计数据",
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "timeRange",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "day",
+                "week",
+                "month",
+                "year"
+              ]
+            },
+            "default": "month",
+            "description": "时间范围"
+          },
+          {
+            "in": "query",
+            "name": "startDate",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "开始日期 (YYYY-MM-DD)"
+          },
+          {
+            "in": "query",
+            "name": "endDate",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "结束日期 (YYYY-MM-DD)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/admin/reports/performance": {
+      "get": {
+        "summary": "获取业绩报表",
+        "description": "获取指定时间范围内的业务绩效统计数据",
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "timeRange",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "day",
+                "week",
+                "month",
+                "year"
+              ]
+            },
+            "default": "month",
+            "description": "时间范围"
+          },
+          {
+            "in": "query",
+            "name": "startDate",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "开始日期 (YYYY-MM-DD)"
+          },
+          {
+            "in": "query",
+            "name": "endDate",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "结束日期 (YYYY-MM-DD)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/admin/users": {
+      "get": {
+        "summary": "获取用户列表",
+        "description": "管理员获取系统中所有用户的列表",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            },
+            "description": "页码"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 10
+            },
+            "description": "每页数量"
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string"
+            },
+            "description": "搜索关键词"
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "inactive"
+              ]
+            },
+            "description": "用户状态过滤"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功获取用户列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "users": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/User"
+                          }
+                        },
+                        "pagination": {
+                          "$ref": "#/components/schemas/Pagination"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "403": {
+            "description": "无权访问"
+          }
+        }
+      }
+    },
+    "/admin/users/{id}": {
+      "get": {
+        "summary": "获取用户详情",
+        "description": "管理员获取指定用户的详细信息",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "用户ID"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功获取用户详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "$ref": "#/components/schemas/UserDetail"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "403": {
+            "description": "无权访问"
+          },
+          "404": {
+            "description": "用户不存在"
+          }
+        }
+      },
+      "patch": {
+        "summary": "更新用户信息",
+        "description": "管理员更新指定用户的信息",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "用户ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fullName": {
+                    "type": "string",
+                    "description": "用户全名"
+                  },
+                  "phone": {
+                    "type": "string",
+                    "description": "电话号码"
+                  },
+                  "address": {
+                    "type": "string",
+                    "description": "地址"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "description": "电子邮件"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "inactive",
+                      "suspended"
+                    ],
+                    "description": "用户状态"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "customer",
+                      "mechanic",
+                      "admin"
+                    ],
+                    "description": "用户角色"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功更新用户信息",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "$ref": "#/components/schemas/User"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "无效的请求数据"
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "403": {
+            "description": "无权访问"
+          },
+          "404": {
+            "description": "用户不存在"
+          }
+        }
+      }
+    },
+    "/api/admin/vehicle-repair": {
+      "get": {
+        "summary": "获取车辆维修统计报表",
+        "description": "获取指定时间范围内的车辆维修统计数据",
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "timeRange",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "day",
+                "week",
+                "month",
+                "year"
+              ]
+            },
+            "default": "month",
+            "description": "时间范围"
+          },
+          {
+            "in": "query",
+            "name": "startDate",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "开始日期 (YYYY-MM-DD)"
+          },
+          {
+            "in": "query",
+            "name": "endDate",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "结束日期 (YYYY-MM-DD)"
+          },
+          {
+            "in": "query",
+            "name": "make",
+            "schema": {
+              "type": "string"
+            },
+            "description": "车辆品牌"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "timeRange": {
+                          "type": "string"
+                        },
+                        "startDate": {
+                          "type": "string"
+                        },
+                        "endDate": {
+                          "type": "string"
+                        },
+                        "totalRepairs": {
+                          "type": "number"
+                        },
+                        "vehicleCount": {
+                          "type": "number"
+                        },
+                        "averageRepairsPerVehicle": {
+                          "type": "number"
+                        },
+                        "repairsByMake": {
+                          "type": "array"
+                        },
+                        "repairsByVehicleAge": {
+                          "type": "array"
+                        },
+                        "mostCommonIssues": {
+                          "type": "array"
+                        },
+                        "repairTrend": {
+                          "type": "array"
+                        },
+                        "seasonalFactors": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/admin/vehicles": {
+      "get": {
+        "summary": "获取所有车辆列表（管理员视图）",
+        "description": "获取系统中所有车辆的列表，支持分页、搜索和过滤",
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "default": 1,
+            "description": "页码"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "default": 10,
+            "description": "每页记录数"
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string"
+            },
+            "description": "搜索关键词（车牌号、VIN、车主姓名等）"
+          },
+          {
+            "in": "query",
+            "name": "make",
+            "schema": {
+              "type": "string"
+            },
+            "description": "车辆品牌"
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "inactive"
+              ]
+            },
+            "description": "车辆状态"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "vehicles": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "pagination": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/admin/work-orders": {
+      "get": {
+        "summary": "获取所有工单列表（管理员视图）",
+        "description": "获取系统中所有工单的列表，支持分页和多种过滤条件",
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "default": 1,
+            "description": "页码"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "default": 10,
+            "description": "每页记录数"
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "accepted",
+                "in_progress",
+                "completed",
+                "cancelled"
+              ]
+            },
+            "description": "工单状态"
+          },
+          {
+            "in": "query",
+            "name": "mechanic",
+            "schema": {
+              "type": "string"
+            },
+            "description": "技师ID"
+          },
+          {
+            "in": "query",
+            "name": "customer",
+            "schema": {
+              "type": "string"
+            },
+            "description": "客户ID"
+          },
+          {
+            "in": "query",
+            "name": "dateFrom",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "开始日期 (YYYY-MM-DD)"
+          },
+          {
+            "in": "query",
+            "name": "dateTo",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "结束日期 (YYYY-MM-DD)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "workOrders": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "pagination": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/admin/work-orders/{id}": {
+      "put": {
+        "summary": "更新工单信息（管理员操作）",
+        "description": "管理员更新工单的状态、优先级、分配技师等信息",
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "工单ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "accepted",
+                      "in_progress",
+                      "completed",
+                      "cancelled"
+                    ]
+                  },
+                  "priority": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "normal",
+                      "high",
+                      "urgent"
+                    ]
+                  },
+                  "mechanicId": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "estimatedCompletionTime": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "estimatedCost": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "404": {
+            "description": "工单不存在"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      },
+      "delete": {
+        "summary": "删除工单（管理员操作）",
+        "description": "管理员删除指定的工单，仅允许删除待处理或已取消的工单",
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "工单ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "404": {
+            "description": "工单不存在"
+          },
+          "409": {
+            "description": "工单状态不允许删除"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/admin/workorders/{id}": {
+      "get": {
+        "summary": "获取工单详情（管理员视图）",
+        "description": "获取指定工单的详细信息，包括客户、技师、车辆、维修历史等",
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "工单ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "workOrder": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "404": {
+            "description": "工单不存在"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/admin/trade-workload": {
+      "get": {
+        "summary": "获取工种工作量统计报表",
+        "description": "获取指定时间范围内的工种工作量统计数据",
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "timeRange",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "day",
+                "week",
+                "month",
+                "year"
+              ]
+            },
+            "default": "month",
+            "description": "时间范围"
+          },
+          {
+            "in": "query",
+            "name": "startDate",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "开始日期 (YYYY-MM-DD)"
+          },
+          {
+            "in": "query",
+            "name": "endDate",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "结束日期 (YYYY-MM-DD)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "timeRange": {
+                          "type": "string"
+                        },
+                        "startDate": {
+                          "type": "string"
+                        },
+                        "endDate": {
+                          "type": "string"
+                        },
+                        "totalOrders": {
+                          "type": "number"
+                        },
+                        "completedOrders": {
+                          "type": "number"
+                        },
+                        "inProgressOrders": {
+                          "type": "number"
+                        },
+                        "workloadByTradeType": {
+                          "type": "array"
+                        },
+                        "mechanicSpecialties": {
+                          "type": "array"
+                        },
+                        "capacityUtilization": {
+                          "type": "array"
+                        },
+                        "highDemandSkills": {
+                          "type": "array"
+                        },
+                        "schedulingEfficiency": {
+                          "type": "object"
+                        },
+                        "workloadTrend": {
+                          "type": "array"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "summary": "用户登录",
+        "description": "用户使用用户名和密码登录系统，返回JWT令牌",
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "username",
+                  "password"
+                ],
+                "properties": {
+                  "username": {
+                    "type": "string",
+                    "description": "用户名或电子邮箱"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "description": "用户密码"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "登录成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "token": {
+                          "type": "string",
+                          "description": "JWT认证令牌"
+                        },
+                        "user": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "用户ID"
+                            },
+                            "username": {
+                              "type": "string",
+                              "description": "用户名"
+                            },
+                            "role": {
+                              "type": "string",
+                              "enum": [
+                                "customer",
+                                "mechanic",
+                                "admin"
+                              ],
+                              "description": "用户角色"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "401": {
+            "description": "用户名或密码错误"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/auth/profile": {
+      "get": {
+        "summary": "获取用户个人资料",
+        "description": "获取当前已认证用户的个人资料信息",
+        "tags": [
+          "auth"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "用户ID"
+                            },
+                            "name": {
+                              "type": "string",
+                              "description": "用户姓名"
+                            },
+                            "role": {
+                              "type": "string",
+                              "description": "用户角色"
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "创建时间"
+                            },
+                            "lastLogin": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "最后登录时间"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "summary": "刷新访问令牌",
+        "description": "使用刷新令牌生成新的访问令牌",
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "refreshToken"
+                ],
+                "properties": {
+                  "refreshToken": {
+                    "type": "string",
+                    "description": "刷新令牌"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "令牌刷新成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "令牌刷新成功"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "accessToken": {
+                          "type": "string",
+                          "description": "新的访问令牌"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "401": {
+            "description": "无效的刷新令牌"
+          },
+          "404": {
+            "description": "用户不存在"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "summary": "用户注册",
+        "description": "创建新用户账号",
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "password",
+                  "confirmPassword"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "用户姓名"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "description": "密码"
+                  },
+                  "confirmPassword": {
+                    "type": "string",
+                    "format": "password",
+                    "description": "确认密码"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "customer",
+                      "mechanic",
+                      "admin"
+                    ],
+                    "description": "用户角色（可选，默认为customer）"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "注册成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "注册成功"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "用户ID"
+                        },
+                        "name": {
+                          "type": "string",
+                          "description": "用户姓名"
+                        },
+                        "role": {
+                          "type": "string",
+                          "description": "用户角色"
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "创建时间"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "409": {
+            "description": "用户名已被注册"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/customers/profile": {
+      "get": {
+        "summary": "获取当前客户个人资料",
+        "description": "获取当前登录客户的个人资料信息",
+        "tags": [
+          "Customers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "username": {
+                              "type": "string"
+                            },
+                            "email": {
+                              "type": "string",
+                              "format": "email"
+                            },
+                            "phone": {
+                              "type": "string"
+                            },
+                            "fullName": {
+                              "type": "string"
+                            },
+                            "address": {
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "vehicleCount": {
+                              "type": "integer"
+                            },
+                            "orderCount": {
+                              "type": "integer"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      },
+      "put": {
+        "summary": "更新当前客户个人资料",
+        "description": "更新当前登录客户的个人资料信息",
+        "tags": [
+          "Customers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fullName": {
+                    "type": "string",
+                    "description": "姓名"
+                  },
+                  "phone": {
+                    "type": "string",
+                    "description": "电话号码"
+                  },
+                  "address": {
+                    "type": "string",
+                    "description": "地址"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "description": "电子邮箱"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "description": "新密码"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "个人资料已更新"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "updatedFields": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/customers/vehicles": {
+      "get": {
+        "summary": "获取当前客户的所有车辆",
+        "description": "获取当前登录客户的所有车辆信息",
+        "tags": [
+          "Customers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "vehicles": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "make": {
+                                "type": "string"
+                              },
+                              "model": {
+                                "type": "string"
+                              },
+                              "year": {
+                                "type": "integer"
+                              },
+                              "licensePlate": {
+                                "type": "string"
+                              },
+                              "vin": {
+                                "type": "string"
+                              },
+                              "mileage": {
+                                "type": "integer"
+                              },
+                              "lastMaintenanceDate": {
+                                "type": "string",
+                                "format": "date"
+                              },
+                              "status": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        "total": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      },
+      "post": {
+        "summary": "添加新车辆",
+        "description": "为当前登录客户添加新的车辆",
+        "tags": [
+          "Customers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "make",
+                  "model",
+                  "year",
+                  "licensePlate",
+                  "vin"
+                ],
+                "properties": {
+                  "make": {
+                    "type": "string",
+                    "description": "车辆品牌"
+                  },
+                  "model": {
+                    "type": "string",
+                    "description": "车辆型号"
+                  },
+                  "year": {
+                    "type": "integer",
+                    "description": "车辆年份"
+                  },
+                  "licensePlate": {
+                    "type": "string",
+                    "description": "车牌号"
+                  },
+                  "vin": {
+                    "type": "string",
+                    "description": "车辆识别号(VIN)"
+                  },
+                  "mileage": {
+                    "type": "integer",
+                    "description": "当前里程数"
+                  },
+                  "color": {
+                    "type": "string",
+                    "description": "车辆颜色"
+                  },
+                  "engineNumber": {
+                    "type": "string",
+                    "description": "发动机编号"
+                  },
+                  "purchaseDate": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "购买日期"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "创建成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "车辆添加成功"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "vehicle": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "409": {
+            "description": "车牌号或VIN码已存在"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/customers/vehicles/{id}": {
+      "get": {
+        "summary": "获取车辆详情",
+        "description": "获取指定车辆的详细信息",
+        "tags": [
+          "Customers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "车辆ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "vehicle": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "403": {
+            "description": "无权访问"
+          },
+          "404": {
+            "description": "车辆不存在"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      },
+      "put": {
+        "summary": "更新车辆信息",
+        "description": "更新指定车辆的信息",
+        "tags": [
+          "Customers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "车辆ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "mileage": {
+                    "type": "integer",
+                    "description": "当前里程数"
+                  },
+                  "color": {
+                    "type": "string",
+                    "description": "车辆颜色"
+                  },
+                  "notes": {
+                    "type": "string",
+                    "description": "备注信息"
+                  },
+                  "lastMaintenanceDate": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "最近保养日期"
+                  },
+                  "insuranceExpiry": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "保险到期日"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "车辆信息已更新"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "updatedFields": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "403": {
+            "description": "无权修改"
+          },
+          "404": {
+            "description": "车辆不存在"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      },
+      "delete": {
+        "summary": "删除车辆",
+        "description": "删除指定的车辆",
+        "tags": [
+          "Customers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "车辆ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "车辆已删除"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "403": {
+            "description": "无权删除"
+          },
+          "404": {
+            "description": "车辆不存在"
+          },
+          "409": {
+            "description": "车辆有未完成的工单"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/customers/work-orders": {
+      "get": {
+        "summary": "获取当前客户的所有工单",
+        "description": "获取当前登录客户的所有维修工单，支持分页和状态筛选",
+        "tags": [
+          "Customers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "accepted",
+                "in_progress",
+                "completed",
+                "cancelled"
+              ]
+            },
+            "description": "工单状态过滤"
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            },
+            "description": "页码"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 10
+            },
+            "description": "每页记录数"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "workOrders": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "vehicleId": {
+                                "type": "string"
+                              },
+                              "vehicleInfo": {
+                                "type": "object"
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "createdAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "estimatedCompletionTime": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "mechanicId": {
+                                "type": "string"
+                              },
+                              "mechanicName": {
+                                "type": "string"
+                              },
+                              "priority": {
+                                "type": "string"
+                              },
+                              "totalCost": {
+                                "type": "number"
+                              }
+                            }
+                          }
+                        },
+                        "pagination": {
+                          "type": "object",
+                          "properties": {
+                            "page": {
+                              "type": "integer"
+                            },
+                            "limit": {
+                              "type": "integer"
+                            },
+                            "total": {
+                              "type": "integer"
+                            },
+                            "pages": {
+                              "type": "integer"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      },
+      "post": {
+        "summary": "创建新工单",
+        "description": "为当前登录客户创建新的维修工单",
+        "tags": [
+          "Customers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "vehicleId",
+                  "description"
+                ],
+                "properties": {
+                  "vehicleId": {
+                    "type": "string",
+                    "description": "车辆ID"
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "问题描述"
+                  },
+                  "preferredTime": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "期望服务时间"
+                  },
+                  "additionalNotes": {
+                    "type": "string",
+                    "description": "额外说明"
+                  },
+                  "priority": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "normal",
+                      "high",
+                      "urgent"
+                    ],
+                    "default": "normal",
+                    "description": "优先级"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "创建成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "工单创建成功"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "workOrder": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "403": {
+            "description": "无权为该车辆创建工单"
+          },
+          "404": {
+            "description": "未找到车辆"
+          },
+          "409": {
+            "description": "车辆已有类似的未完成工单"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/customers/work-orders/{id}": {
+      "get": {
+        "summary": "获取工单详情",
+        "description": "获取指定工单的详细信息",
+        "tags": [
+          "Customers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "工单ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "workOrder": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "userId": {
+                              "type": "string"
+                            },
+                            "vehicleId": {
+                              "type": "string"
+                            },
+                            "vehicleInfo": {
+                              "type": "object"
+                            },
+                            "description": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "estimatedCompletionTime": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "mechanicInfo": {
+                              "type": "object"
+                            },
+                            "priority": {
+                              "type": "string"
+                            },
+                            "progressUpdates": {
+                              "type": "array"
+                            },
+                            "materials": {
+                              "type": "array"
+                            },
+                            "laborCost": {
+                              "type": "number"
+                            },
+                            "totalCost": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "403": {
+            "description": "无权查看该工单"
+          },
+          "404": {
+            "description": "未找到工单"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/customers/work-orders/{id}/feedback": {
+      "post": {
+        "summary": "为工单添加评价",
+        "description": "为已完成的工单添加评价和评分",
+        "tags": [
+          "Customers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "工单ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "rating"
+                ],
+                "properties": {
+                  "rating": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5,
+                    "description": "评分(1-5)"
+                  },
+                  "comment": {
+                    "type": "string",
+                    "description": "评价内容"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "评价添加成功"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "feedback": {
+                          "type": "object",
+                          "properties": {
+                            "rating": {
+                              "type": "integer"
+                            },
+                            "comment": {
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "403": {
+            "description": "无权为该工单添加评价"
+          },
+          "404": {
+            "description": "未找到工单"
+          },
+          "409": {
+            "description": "该工单已有评价"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/customers/work-orders/{id}/urge": {
+      "post": {
+        "summary": "催促工单",
+        "description": "催促技师尽快完成工单",
+        "tags": [
+          "Customers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "工单ID"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "message": {
+                    "type": "string",
+                    "description": "催促留言"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "催促成功，已通知技师"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "urgeRecord": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "403": {
+            "description": "无权催促该工单"
+          },
+          "404": {
+            "description": "未找到工单"
+          },
+          "429": {
+            "description": "请求过于频繁"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/mechanic/income/monthly": {
+      "get": {
+        "summary": "获取技师月收入统计",
+        "description": "获取当前登录技师指定月份的收入统计数据",
+        "tags": [
+          "Mechanic"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "month",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12
+            },
+            "description": "月份(1-12)，默认为当前月"
+          },
+          {
+            "in": "query",
+            "name": "year",
+            "schema": {
+              "type": "integer",
+              "minimum": 2000
+            },
+            "description": "年份，默认为当前年"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "income": {
+                          "type": "object",
+                          "properties": {
+                            "month": {
+                              "type": "integer"
+                            },
+                            "year": {
+                              "type": "integer"
+                            },
+                            "totalIncome": {
+                              "type": "number"
+                            },
+                            "completedOrders": {
+                              "type": "integer"
+                            },
+                            "incomeByDay": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "day": {
+                                    "type": "integer"
+                                  },
+                                  "income": {
+                                    "type": "number"
+                                  }
+                                }
+                              }
+                            },
+                            "incomeByType": {
+                              "type": "object",
+                              "properties": {
+                                "labor": {
+                                  "type": "number"
+                                },
+                                "parts": {
+                                  "type": "number"
+                                }
+                              }
+                            },
+                            "topServices": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "count": {
+                                    "type": "integer"
+                                  },
+                                  "income": {
+                                    "type": "number"
+                                  }
+                                }
+                              }
+                            },
+                            "comparison": {
+                              "type": "object",
+                              "properties": {
+                                "previousMonth": {
+                                  "type": "number"
+                                },
+                                "percentChange": {
+                                  "type": "number"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/mechanic/profile": {
+      "get": {
+        "summary": "获取当前技师个人资料",
+        "description": "获取当前登录技师的个人资料信息",
+        "tags": [
+          "Mechanic"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "profile": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "phone": {
+                              "type": "string"
+                            },
+                            "email": {
+                              "type": "string",
+                              "format": "email"
+                            },
+                            "specialties": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "qualification": {
+                              "type": "string"
+                            },
+                            "certification": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "experience": {
+                              "type": "integer",
+                              "description": "工作年限"
+                            },
+                            "joinDate": {
+                              "type": "string",
+                              "format": "date"
+                            },
+                            "avatar": {
+                              "type": "string",
+                              "format": "uri"
+                            },
+                            "rating": {
+                              "type": "number",
+                              "format": "float",
+                              "minimum": 0,
+                              "maximum": 5
+                            },
+                            "completedOrders": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "active",
+                                "inactive",
+                                "on_leave"
+                              ]
+                            },
+                            "workingHours": {
+                              "type": "object"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      },
+      "put": {
+        "summary": "更新当前技师个人资料",
+        "description": "更新当前登录技师的个人资料信息",
+        "tags": [
+          "Mechanic"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "description": "联系电话"
+                  },
+                  "specialties": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "专长领域"
+                  },
+                  "qualification": {
+                    "type": "string",
+                    "description": "资质"
+                  },
+                  "certification": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "认证证书"
+                  },
+                  "workingHours": {
+                    "type": "object",
+                    "description": "工作时间",
+                    "properties": {
+                      "monday": {
+                        "type": "object",
+                        "properties": {
+                          "start": {
+                            "type": "string",
+                            "pattern": "^([01]\\d|2[0-3]):([0-5]\\d)$",
+                            "example": "08:00"
+                          },
+                          "end": {
+                            "type": "string",
+                            "pattern": "^([01]\\d|2[0-3]):([0-5]\\d)$",
+                            "example": "17:00"
+                          }
+                        }
+                      },
+                      "tuesday": {
+                        "$ref": "#/components/schemas/WorkingHoursDay"
+                      },
+                      "wednesday": {
+                        "$ref": "#/components/schemas/WorkingHoursDay"
+                      },
+                      "thursday": {
+                        "$ref": "#/components/schemas/WorkingHoursDay"
+                      },
+                      "friday": {
+                        "$ref": "#/components/schemas/WorkingHoursDay"
+                      },
+                      "saturday": {
+                        "$ref": "#/components/schemas/WorkingHoursDay"
+                      },
+                      "sunday": {
+                        "$ref": "#/components/schemas/WorkingHoursDay"
+                      }
+                    }
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "description": "电子邮箱"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "description": "新密码"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "个人资料已更新"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "updatedFields": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/mechanic/work-orders": {
+      "get": {
+        "summary": "获取当前技师的工单列表",
+        "description": "获取当前登录技师的所有工单，支持分页和状态筛选",
+        "tags": [
+          "Mechanic"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "accepted",
+                "in_progress",
+                "completed",
+                "cancelled"
+              ]
+            },
+            "description": "工单状态过滤"
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            },
+            "description": "页码"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 10
+            },
+            "description": "每页记录数"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "workOrders": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "vehicleId": {
+                                "type": "string"
+                              },
+                              "vehicleInfo": {
+                                "type": "object"
+                              },
+                              "customerId": {
+                                "type": "string"
+                              },
+                              "customerInfo": {
+                                "type": "object"
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "createdAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "acceptedAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "estimatedCompletionTime": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "priority": {
+                                "type": "string"
+                              },
+                              "estimatedCost": {
+                                "type": "number"
+                              },
+                              "progressNotes": {
+                                "type": "array"
+                              }
+                            }
+                          }
+                        },
+                        "pagination": {
+                          "type": "object",
+                          "properties": {
+                            "page": {
+                              "type": "integer"
+                            },
+                            "limit": {
+                              "type": "integer"
+                            },
+                            "total": {
+                              "type": "integer"
+                            },
+                            "pages": {
+                              "type": "integer"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/mechanic/work-orders/{id}/accept": {
+      "post": {
+        "summary": "接受工单",
+        "description": "技师接受指定的工单",
+        "tags": [
+          "Mechanic"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "工单ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "estimatedCompletionTime",
+                  "estimatedCost"
+                ],
+                "properties": {
+                  "estimatedCompletionTime": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "预计完成时间"
+                  },
+                  "estimatedCost": {
+                    "type": "number",
+                    "description": "预计费用"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "工单已接受"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "workOrder": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "404": {
+            "description": "未找到工单"
+          },
+          "409": {
+            "description": "工单状态冲突"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/mechanic/work-orders/{id}/refuse": {
+      "post": {
+        "summary": "拒绝工单",
+        "description": "技师拒绝指定的工单",
+        "tags": [
+          "Mechanic"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "工单ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "description": "拒绝原因"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "工单已拒绝"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "refusalRecord": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "404": {
+            "description": "未找到工单"
+          },
+          "409": {
+            "description": "工单状态冲突"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/mechanic/work-orders/{id}/progress": {
+      "post": {
+        "summary": "更新工单进度",
+        "description": "技师更新工单的进度和状态",
+        "tags": [
+          "Mechanic"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "工单ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "progressNote"
+                ],
+                "properties": {
+                  "progressNote": {
+                    "type": "string",
+                    "description": "进度备注"
+                  },
+                  "estimatedCompletionTime": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "更新的预计完成时间"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "工单进度已更新"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "progressUpdate": {
+                          "type": "object"
+                        },
+                        "status": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "403": {
+            "description": "无权更新该工单"
+          },
+          "404": {
+            "description": "未找到工单"
+          },
+          "409": {
+            "description": "工单状态冲突"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/mechanic/work-orders/{id}/materials": {
+      "post": {
+        "summary": "记录工单所用材料",
+        "description": "技师记录工单维修过程中使用的材料",
+        "tags": [
+          "Mechanic"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "工单ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "materials"
+                ],
+                "properties": {
+                  "materials": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "name",
+                        "quantity",
+                        "unitPrice"
+                      ],
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "description": "材料名称"
+                        },
+                        "quantity": {
+                          "type": "number",
+                          "description": "数量"
+                        },
+                        "unitPrice": {
+                          "type": "number",
+                          "description": "单价"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "材料记录已添加"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "materialRecord": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "403": {
+            "description": "无权为该工单添加材料"
+          },
+          "404": {
+            "description": "未找到工单"
+          },
+          "409": {
+            "description": "工单状态冲突"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/mechanic/work-orders/{id}/complete": {
+      "post": {
+        "summary": "完成工单",
+        "description": "技师标记工单为已完成",
+        "tags": [
+          "Mechanic"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "工单ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "laborCost",
+                  "summaryReport"
+                ],
+                "properties": {
+                  "laborCost": {
+                    "type": "number",
+                    "description": "人工费用"
+                  },
+                  "summaryReport": {
+                    "type": "string",
+                    "description": "维修总结报告"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "工单已完成"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "workOrder": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "403": {
+            "description": "无权完成该工单"
+          },
+          "404": {
+            "description": "未找到工单"
+          },
+          "409": {
+            "description": "工单状态冲突"
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/v1/openapi.json": {
+      "get": {
+        "summary": "获取OpenAPI规范文档",
+        "description": "返回系统的OpenAPI 3.0规范文档JSON格式",
+        "tags": [
+          "System"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功返回OpenAPI规范文档",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "OpenAPI 3.0规范文档",
+                  "properties": {
+                    "openapi": {
+                      "type": "string",
+                      "example": "3.0.0"
+                    },
+                    "info": {
+                      "type": "object",
+                      "properties": {
+                        "title": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "servers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "url": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "paths": {
+                      "type": "object",
+                      "description": "API路径定义"
+                    },
+                    "components": {
+                      "type": "object",
+                      "description": "可重用组件"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/v1/docs": {
+      "get": {
+        "summary": "获取Swagger UI界面",
+        "description": "返回Swagger UI文档界面，用于交互式API文档浏览",
+        "tags": [
+          "System"
+        ],
+        "responses": {
+          "200": {
+            "description": "成功返回Swagger UI页面",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string",
+                  "description": "Swagger UI HTML页面"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "error"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无法加载Swagger UI"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/docs/generate": {
+      "post": {
+        "summary": "生成并保存OpenAPI规范文档",
+        "description": "重新生成OpenAPI规范文档并保存到文件系统",
+        "tags": [
+          "System"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功生成并保存文档",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "OpenAPI规范已生成并保存"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未授权"
+          },
+          "500": {
+            "description": "生成失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "error"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "生成OpenAPI规范失败"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/healthz": {
+      "get": {
+        "summary": "系统健康检查",
+        "description": "获取系统运行状态、内存使用情况和运行时间等信息",
+        "tags": [
+          "System"
+        ],
+        "responses": {
+          "200": {
+            "description": "系统状态正常",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "ok",
+                      "description": "系统状态"
+                    },
+                    "uptime": {
+                      "type": "string",
+                      "example": "2h 30m 45s",
+                      "description": "系统运行时间"
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "检查时间戳"
+                    },
+                    "memory": {
+                      "type": "object",
+                      "properties": {
+                        "rss": {
+                          "type": "string",
+                          "example": "128MB",
+                          "description": "常驻内存大小"
+                        },
+                        "heapTotal": {
+                          "type": "string",
+                          "example": "64MB",
+                          "description": "堆总大小"
+                        },
+                        "heapUsed": {
+                          "type": "string",
+                          "example": "32MB",
+                          "description": "已使用堆大小"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "系统异常"
+          }
+        }
+      }
+    }
+  }
+}

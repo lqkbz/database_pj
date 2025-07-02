@@ -1,6 +1,9 @@
+const { createError } = require('../../middleware/errorhandler');
 const { createLogger } = require('../../middleware/logger');
+const { WorkOrder, WorkOrderMaterial, WorkOrderMechanic, Payment, Part, MechanicProfile, User } = require('../../models');
+const { Op } = require('sequelize');
 
-const logger = createLogger('AdminReports');
+const logger = createLogger('AdminCostStructure');
 
 /**
  * @swagger
@@ -59,11 +62,9 @@ const logger = createLogger('AdminReports');
  *                       type: number
  *                     costBreakdown:
  *                       type: object
- *                     partsCostByCategory:
+ *                     laborCostByTrade:
  *                       type: array
- *                     laborCostByType:
- *                       type: array
- *                     profitabilityByServiceType:
+ *                     materialCostByCategory:
  *                       type: array
  *                     costTrend:
  *                       type: array
@@ -77,71 +78,212 @@ const logger = createLogger('AdminReports');
 const getCostStructureStats = async (ctx) => {
   const { timeRange = 'month', startDate, endDate } = ctx.query;
   
-  // 构建查询条件
-  const query = { timeRange };
-  
-  if (startDate) {
-    query.startDate = startDate;
+  try {
+    // 构建日期范围
+    let dateFilter = {};
+    if (startDate && endDate) {
+      dateFilter = {
+        created_at: {
+          [Op.between]: [new Date(startDate), new Date(endDate)]
+        }
+      };
+    } else {
+      // 默认最近一个月
+      const now = new Date();
+      const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+      dateFilter = {
+        created_at: {
+          [Op.between]: [oneMonthAgo, now]
+        }
+      };
+    }
+
+    // 获取已完成的工单及相关数据
+    const completedOrders = await WorkOrder.findAll({
+      where: {
+        ...dateFilter,
+        status: 'done'
+      },
+      include: [
+        {
+          model: WorkOrderMaterial,
+          as: 'materials',
+          include: [
+            {
+              model: Part,
+              as: 'part',
+              attributes: ['name', 'unit']
+            }
+          ]
+        },
+        {
+          model: WorkOrderMechanic,
+          as: 'mechanics',
+          include: [
+            {
+              model: MechanicProfile,
+              as: 'mechanic',
+              attributes: ['trade', 'hourly_rate']
+            }
+          ]
+        },
+        {
+          model: Payment,
+          as: 'payment',
+          attributes: ['amount', 'status']
+        }
+      ],
+      attributes: ['order_id', 'created_at', 'description']
+    });
+
+    // 计算总收入
+    const totalRevenue = completedOrders.reduce((sum, order) => {
+      if (order.payment && order.payment.status === 'completed') {
+        return sum + parseFloat(order.payment.amount);
+      }
+      return sum;
+    }, 0);
+
+    // 计算材料成本
+    let totalMaterialCost = 0;
+    const materialCostByCategory = {};
+    
+    completedOrders.forEach(order => {
+      order.materials.forEach(material => {
+        const materialCost = parseFloat(material.price) * material.qty;
+        totalMaterialCost += materialCost;
+        
+        // 按配件名称分类（简化版，实际可能需要更复杂的分类逻辑）
+        const category = material.part.name.includes('机油') ? '润滑油' :
+                        material.part.name.includes('滤') ? '滤清器' :
+                        material.part.name.includes('刹车') ? '刹车系统' :
+                        material.part.name.includes('火花塞') ? '点火系统' : '其他';
+        
+        if (!materialCostByCategory[category]) {
+          materialCostByCategory[category] = 0;
+        }
+        materialCostByCategory[category] += materialCost;
+      });
+    });
+
+    // 计算人工成本
+    let totalLaborCost = 0;
+    const laborCostByTrade = {};
+    
+    completedOrders.forEach(order => {
+      order.mechanics.forEach(mechanic => {
+        const laborCost = parseFloat(mechanic.hours_worked || 0) * parseFloat(mechanic.mechanic.hourly_rate || 0);
+        totalLaborCost += laborCost;
+        
+        const trade = mechanic.mechanic.trade || 'general';
+        if (!laborCostByTrade[trade]) {
+          laborCostByTrade[trade] = 0;
+        }
+        laborCostByTrade[trade] += laborCost;
+      });
+    });
+
+    // 假设其他开销为总成本的10%（实际项目中可能从配置或其他表获取）
+    const overheadCost = (totalMaterialCost + totalLaborCost) * 0.1;
+    const totalCost = totalMaterialCost + totalLaborCost + overheadCost;
+    const grossProfit = totalRevenue - totalCost;
+    const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue * 100) : 0;
+
+    // 成本分解
+    const costBreakdown = {
+      labor: {
+        amount: parseFloat(totalLaborCost.toFixed(2)),
+        percentage: totalCost > 0 ? parseFloat((totalLaborCost / totalCost * 100).toFixed(2)) : 0
+      },
+      materials: {
+        amount: parseFloat(totalMaterialCost.toFixed(2)),
+        percentage: totalCost > 0 ? parseFloat((totalMaterialCost / totalCost * 100).toFixed(2)) : 0
+      },
+      overhead: {
+        amount: parseFloat(overheadCost.toFixed(2)),
+        percentage: totalCost > 0 ? parseFloat((overheadCost / totalCost * 100).toFixed(2)) : 0
+      }
+    };
+
+    // 人工成本按工种分解
+    const laborCostByTradeArray = Object.entries(laborCostByTrade).map(([trade, amount]) => ({
+      type: trade,
+      amount: parseFloat(amount.toFixed(2)),
+      percentage: totalLaborCost > 0 ? parseFloat((amount / totalLaborCost * 100).toFixed(2)) : 0
+    }));
+
+    // 材料成本按类别分解
+    const materialCostByCategoryArray = Object.entries(materialCostByCategory).map(([category, amount]) => ({
+      category,
+      amount: parseFloat(amount.toFixed(2)),
+      percentage: totalMaterialCost > 0 ? parseFloat((amount / totalMaterialCost * 100).toFixed(2)) : 0
+    }));
+
+    // 成本趋势分析（按月统计）
+    const monthlyStats = {};
+    completedOrders.forEach(order => {
+      const monthKey = new Date(order.created_at).toISOString().slice(0, 7); // YYYY-MM
+      
+      if (!monthlyStats[monthKey]) {
+        monthlyStats[monthKey] = {
+          labor: 0,
+          materials: 0,
+          overhead: 0
+        };
+      }
+      
+      // 计算该工单的成本
+      let orderMaterialCost = 0;
+      order.materials.forEach(material => {
+        orderMaterialCost += parseFloat(material.price) * material.qty;
+      });
+      
+      let orderLaborCost = 0;
+      order.mechanics.forEach(mechanic => {
+        orderLaborCost += parseFloat(mechanic.hours_worked || 0) * parseFloat(mechanic.mechanic.hourly_rate || 0);
+      });
+      
+      const orderOverheadCost = (orderMaterialCost + orderLaborCost) * 0.1;
+      
+      monthlyStats[monthKey].materials += orderMaterialCost;
+      monthlyStats[monthKey].labor += orderLaborCost;
+      monthlyStats[monthKey].overhead += orderOverheadCost;
+    });
+
+    const costTrend = Object.entries(monthlyStats)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, costs]) => ({
+        month: new Date(month + '-01').toLocaleDateString('zh-CN', { month: 'long' }),
+        labor: parseFloat(costs.labor.toFixed(2)),
+        materials: parseFloat(costs.materials.toFixed(2)),
+        overhead: parseFloat(costs.overhead.toFixed(2))
+      }));
+
+    // 成本结构分析
+    const costStructureStats = {
+      timeRange,
+      startDate: startDate || new Date(new Date().getFullYear(), new Date().getMonth() - 1, new Date().getDate()).toISOString().split('T')[0],
+      endDate: endDate || new Date().toISOString().split('T')[0],
+      totalRevenue: parseFloat(totalRevenue.toFixed(2)),
+      totalCost: parseFloat(totalCost.toFixed(2)),
+      grossProfit: parseFloat(grossProfit.toFixed(2)),
+      grossMargin: parseFloat(grossMargin.toFixed(2)),
+      costBreakdown,
+      laborCostByTrade: laborCostByTradeArray,
+      materialCostByCategory: materialCostByCategoryArray,
+      costTrend
+    };
+    
+    logger.info(`管理员查询了成本结构分析报表`);
+    
+    ctx.body = {
+      status: 'success',
+      data: costStructureStats
+    };
+  } catch (error) {
+    logger.error('获取成本结构分析失败:', error);
+    throw createError.internal('获取成本结构分析失败');
   }
-  
-  if (endDate) {
-    query.endDate = endDate;
-  }
-  
-  // 从数据库获取统计数据
-  // 实际项目中替换为数据库聚合查询
-  
-  // 成本结构分析
-  const costStructureStats = {
-    timeRange: query.timeRange,
-    startDate: query.startDate || '2023-01-01',
-    endDate: query.endDate || '2023-05-31',
-    totalRevenue: 356800.00,
-    totalCost: 246500.00,
-    grossProfit: 110300.00,
-    grossMargin: 30.91,
-    costBreakdown: {
-      labor: { amount: 132400.00, percentage: 53.71 },
-      parts: { amount: 98800.00, percentage: 40.08 },
-      overhead: { amount: 15300.00, percentage: 6.21 }
-    },
-    partsCostByCategory: [
-      { category: '滤清器', amount: 25600.00, percentage: 25.91 },
-      { category: '润滑油', amount: 22400.00, percentage: 22.67 },
-      { category: '刹车系统', amount: 18900.00, percentage: 19.13 },
-      { category: '电子部件', amount: 14500.00, percentage: 14.68 },
-      { category: '冷却系统', amount: 8200.00, percentage: 8.30 },
-      { category: '其他', amount: 9200.00, percentage: 9.31 }
-    ],
-    laborCostByType: [
-      { type: '常规保养', amount: 32600.00, percentage: 24.62 },
-      { type: '发动机维修', amount: 29800.00, percentage: 22.51 },
-      { type: '电子系统', amount: 25300.00, percentage: 19.11 },
-      { type: '底盘调校', amount: 21400.00, percentage: 16.16 },
-      { type: '其他维修', amount: 23300.00, percentage: 17.60 }
-    ],
-    profitabilityByServiceType: [
-      { type: '常规保养', revenue: 78500.00, cost: 48600.00, margin: 38.09 },
-      { type: '发动机维修', revenue: 98200.00, cost: 72400.00, margin: 26.27 },
-      { type: '电子系统', revenue: 65300.00, cost: 42500.00, margin: 34.92 },
-      { type: '底盘调校', revenue: 58600.00, cost: 41800.00, margin: 28.67 },
-      { type: '其他维修', revenue: 56200.00, cost: 41200.00, margin: 26.69 }
-    ],
-    costTrend: [
-      { month: '1月', labor: 22500, parts: 16800, overhead: 2800 },
-      { month: '2月', labor: 24300, parts: 18400, overhead: 3100 },
-      { month: '3月', labor: 26800, parts: 19600, overhead: 3000 },
-      { month: '4月', labor: 28600, parts: 21500, overhead: 3200 },
-      { month: '5月', labor: 30200, parts: 22500, overhead: 3200 }
-    ]
-  };
-  
-  logger.info(`管理员查询了成本结构分析报表`);
-  
-  ctx.body = {
-    status: 'success',
-    data: costStructureStats
-  };
 };
 
 module.exports = {

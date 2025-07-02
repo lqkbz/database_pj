@@ -1,5 +1,8 @@
+const { User, MechanicProfile, WorkOrderMechanic, WorkOrder, Feedback } = require('../../models');
 const { createError } = require('../../middleware/errorhandler');
 const { createLogger } = require('../../middleware/logger');
+const bcrypt = require('bcrypt');
+const { Op } = require('sequelize');
 
 const logger = createLogger('MechanicProfile');
 
@@ -33,30 +36,18 @@ const logger = createLogger('MechanicProfile');
  *                           type: string
  *                         name:
  *                           type: string
- *                         phone:
+ *                         trade:
  *                           type: string
- *                         email:
- *                           type: string
- *                           format: email
- *                         specialties:
- *                           type: array
- *                           items:
- *                             type: string
- *                         qualification:
- *                           type: string
- *                         certification:
- *                           type: array
- *                           items:
- *                             type: string
- *                         experience:
- *                           type: integer
- *                           description: 工作年限
- *                         joinDate:
+ *                           enum: [engine, paint, electric]
+ *                         hourlyRate:
+ *                           type: number
+ *                         hireDate:
  *                           type: string
  *                           format: date
- *                         avatar:
+ *                           description: 入职日期
+ *                         certNo:
  *                           type: string
- *                           format: uri
+ *                           description: 资质证书编号
  *                         rating:
  *                           type: number
  *                           format: float
@@ -64,52 +55,120 @@ const logger = createLogger('MechanicProfile');
  *                           maximum: 5
  *                         completedOrders:
  *                           type: integer
- *                         status:
- *                           type: string
- *                           enum: [active, inactive, on_leave]
- *                         workingHours:
- *                           type: object
+ *                         totalLaborFee:
+ *                           type: number
+ *                           description: 总人工费收入
  *       401:
  *         description: 未授权
  *       500:
  *         description: 服务器错误
  */
 const getMyProfile = async (ctx) => {
-  const { user } = ctx.state;
-  
-  // 获取技师详细信息（从数据库）
-  // 实际项目中替换为数据库查询
-  const mechanicProfile = {
-    id: user.id,
-    name: '李师傅',
-    phone: '13911112222',
-    email: user.email,
-    specialties: ['发动机维修', '电子系统诊断', '底盘调校'],
-    qualification: '高级汽车维修技师',
-    certification: ['ASE认证', '本田认证技师'],
-    experience: 8,  // 工作年限
-    joinDate: '2020-03-15',
-    avatar: 'https://example.com/avatars/mechanic1.jpg',
-    rating: 4.8,
-    completedOrders: 356,
-    status: 'active',
-    workingHours: {
-      monday: { start: '08:00', end: '17:00' },
-      tuesday: { start: '08:00', end: '17:00' },
-      wednesday: { start: '08:00', end: '17:00' },
-      thursday: { start: '08:00', end: '17:00' },
-      friday: { start: '08:00', end: '17:00' },
-      saturday: { start: '09:00', end: '15:00' },
-      sunday: { start: null, end: null }
+  try {
+    const { user } = ctx.state;
+    
+    // 获取技师详细信息和档案
+    const mechanicUser = await User.findOne({
+      where: { user_id: user.id },
+      include: [
+        {
+          model: MechanicProfile,
+          as: 'mechanicProfile',
+          required: true
+        }
+      ],
+      attributes: ['user_id', 'name', 'role', 'created_at']
+    });
+    
+    if (!mechanicUser || !mechanicUser.mechanicProfile) {
+      throw createError.notFound('未找到技师档案信息');
     }
-  };
-  
-  ctx.body = {
-    status: 'success',
-    data: {
-      profile: mechanicProfile
+    
+    // 获取已完成工单数量
+    const completedOrders = await WorkOrderMechanic.count({
+      where: { mechanic_id: mechanicUser.mechanicProfile.mechanic_id },
+      include: [
+        {
+          model: WorkOrder,
+          as: 'workOrder',
+          where: { status: 'done' },
+          attributes: []
+        }
+      ]
+    });
+    
+    // 获取总人工费（替代原来的工作时间统计）
+    const totalLaborFee = await User.sequelize.query(`
+      SELECT COALESCE(SUM(p.labor_fee), 0) as totalFee
+      FROM payments p
+      INNER JOIN work_orders wo ON p.order_id = wo.order_id
+      INNER JOIN work_order_mechanics wom ON wo.order_id = wom.order_id
+      WHERE wom.mechanic_id = :mechanicId 
+      AND wo.status = 'done'
+    `, {
+      replacements: { mechanicId: mechanicUser.mechanicProfile.mechanic_id },
+      type: User.sequelize.QueryTypes.SELECT
+    });
+    
+    const totalFee = totalLaborFee && totalLaborFee.length > 0 ? 
+      parseFloat(totalLaborFee[0].totalFee || 0) : 0;
+    
+    // 获取平均评分 - 使用原生SQL避免GROUP BY问题
+    let averageRating = 0;
+    try {
+      const ratingResult = await User.sequelize.query(`
+        SELECT AVG(f.rating) as averageRating
+        FROM feedbacks f
+        INNER JOIN work_orders wo ON f.order_id = wo.order_id
+        INNER JOIN work_order_mechanics wom ON wo.order_id = wom.order_id
+        WHERE wom.mechanic_id = :mechanicId 
+        AND f.rating IS NOT NULL 
+        AND f.rating > 0
+        AND wo.status = 'done'
+      `, {
+        replacements: { mechanicId: mechanicUser.mechanicProfile.mechanic_id },
+        type: User.sequelize.QueryTypes.SELECT
+      });
+      
+      if (ratingResult && ratingResult.length > 0 && ratingResult[0].averageRating) {
+        averageRating = parseFloat(parseFloat(ratingResult[0].averageRating).toFixed(1));
+      }
+    } catch (ratingError) {
+      logger.warn(`获取技师 ${user.id} 平均评分失败: ${ratingError.message}`);
+      // 如果获取评分失败，设置为0，不影响其他数据的获取
+      averageRating = 0;
     }
-  };
+    
+    const mechanicProfile = {
+      id: mechanicUser.user_id,
+      name: mechanicUser.name,
+      trade: mechanicUser.mechanicProfile.trade,
+      hourlyRate: parseFloat(mechanicUser.mechanicProfile.hourly_rate || 0),
+      hireDate: mechanicUser.mechanicProfile.hire_date,
+      certNo: mechanicUser.mechanicProfile.cert_no,
+      rating: averageRating,
+      completedOrders: completedOrders || 0,
+      totalLaborFee: totalFee,
+      status: 'active' // 目前默认为active
+    };
+    
+    logger.info(`技师 ${user.id} 获取了个人资料信息`);
+    
+    ctx.body = {
+      status: 'success',
+      data: {
+        profile: mechanicProfile
+      }
+    };
+  } catch (error) {
+    logger.error(`获取技师资料失败: ${error.message}`);
+    
+    if (error.isOperational) {
+      throw error;
+    }
+    
+    throw createError.internal('获取技师资料失败');
+  }
 };
 
 /**
@@ -128,57 +187,31 @@ const getMyProfile = async (ctx) => {
  *           schema:
  *             type: object
  *             properties:
- *               phone:
+ *               trade:
  *                 type: string
- *                 description: 联系电话
- *               specialties:
- *                 type: array
- *                 items:
- *                   type: string
- *                 description: 专长领域
- *               qualification:
+ *                 enum: [engine, paint, electric]
+ *                 description: 专业工种
+ *               hourlyRate:
+ *                 type: number
+ *                 description: 时薪
+ *               hireDate:
  *                 type: string
- *                 description: 资质
- *               certification:
- *                 type: array
- *                 items:
- *                   type: string
- *                 description: 认证证书
- *               workingHours:
- *                 type: object
- *                 description: 工作时间
- *                 properties:
- *                   monday:
- *                     type: object
- *                     properties:
- *                       start:
- *                         type: string
- *                         pattern: "^([01]\\d|2[0-3]):([0-5]\\d)$"
- *                         example: "08:00"
- *                       end:
- *                         type: string
- *                         pattern: "^([01]\\d|2[0-3]):([0-5]\\d)$"
- *                         example: "17:00"
- *                   tuesday:
- *                     $ref: "#/components/schemas/WorkingHoursDay"
- *                   wednesday:
- *                     $ref: "#/components/schemas/WorkingHoursDay"
- *                   thursday:
- *                     $ref: "#/components/schemas/WorkingHoursDay"
- *                   friday:
- *                     $ref: "#/components/schemas/WorkingHoursDay"
- *                   saturday:
- *                     $ref: "#/components/schemas/WorkingHoursDay"
- *                   sunday:
- *                     $ref: "#/components/schemas/WorkingHoursDay"
- *               email:
+ *                 format: date
+ *                 description: 入职日期
+ *               certNo:
  *                 type: string
- *                 format: email
- *                 description: 电子邮箱
+ *                 description: 资质证书编号
+ *               name:
+ *                 type: string
+ *                 description: 姓名
  *               password:
  *                 type: string
  *                 format: password
  *                 description: 新密码
+ *               currentPassword:
+ *                 type: string
+ *                 format: password
+ *                 description: 当前密码（更新密码时必填）
  *     responses:
  *       200:
  *         description: 成功
@@ -208,62 +241,148 @@ const getMyProfile = async (ctx) => {
  *         description: 服务器错误
  */
 const updateMyProfile = async (ctx) => {
-  const { user } = ctx.state;
-  const updateData = ctx.request.body;
-  
-  // 验证更新数据
-  const allowedFields = ['phone', 'specialties', 'qualification', 'certification', 'workingHours', 'email', 'password'];
-  const updates = {};
-  
-  Object.keys(updateData).forEach(key => {
-    if (allowedFields.includes(key)) {
-      updates[key] = updateData[key];
-    }
-  });
-  
-  if (Object.keys(updates).length === 0) {
-    throw createError.validation('没有提供有效的更新字段');
-  }
-  
-  // 验证工作时间格式
-  if (updates.workingHours) {
-    const daysOfWeek = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  try {
+    const { user } = ctx.state;
+    const updateData = ctx.request.body;
     
-    for (const day of Object.keys(updates.workingHours)) {
-      if (!daysOfWeek.includes(day)) {
-        throw createError.validation(`无效的工作日: ${day}`);
+    // 验证更新数据
+    const profileFields = ['trade', 'hourly_rate', 'hire_date', 'cert_no'];
+    const userFields = ['name'];
+    const profileUpdates = {};
+    const userUpdates = {};
+    
+    Object.keys(updateData).forEach(key => {
+      if (key === 'hourlyRate') {
+        profileUpdates.hourly_rate = updateData[key];
+      } else if (key === 'hireDate') {
+        profileUpdates.hire_date = updateData[key];
+      } else if (key === 'certNo') {
+        profileUpdates.cert_no = updateData[key];
+      } else if (profileFields.includes(key)) {
+        profileUpdates[key] = updateData[key];
+      } else if (userFields.includes(key)) {
+        userUpdates[key] = updateData[key];
+      }
+      // 密码字段单独处理，不加入userUpdates
+    });
+    
+    // 检查是否有有效的更新字段（包括密码）
+    const hasValidUpdates = Object.keys(profileUpdates).length > 0 || 
+                           Object.keys(userUpdates).length > 0 || 
+                           updateData.password;
+    
+    if (!hasValidUpdates) {
+      throw createError.validation('没有提供有效的更新字段');
+    }
+    
+    // 验证数值字段
+    if (profileUpdates.hourly_rate !== undefined) {
+      if (isNaN(profileUpdates.hourly_rate) || profileUpdates.hourly_rate <= 0) {
+        throw createError.validation('时薪必须是大于0的数字');
+      }
+    }
+    
+    // 验证专业工种
+    if (profileUpdates.trade) {
+      const validTrades = ['engine', 'paint', 'electric'];
+      if (!validTrades.includes(profileUpdates.trade)) {
+        throw createError.validation('专业工种必须是 engine、paint 或 electric');
+      }
+    }
+    
+    // 验证日期格式
+    if (profileUpdates.hire_date) {
+      const dateObj = new Date(profileUpdates.hire_date);
+      if (isNaN(dateObj.getTime())) {
+        throw createError.validation('入职日期格式无效');
+      }
+    }
+    
+    // 获取当前用户信息
+    const currentUser = await User.findOne({
+      where: { user_id: user.id },
+      include: [
+        {
+          model: MechanicProfile,
+          as: 'mechanicProfile',
+          required: true
+        }
+      ],
+      attributes: ['user_id', 'name', 'password_hash']
+    });
+    
+    if (!currentUser || !currentUser.mechanicProfile) {
+      throw createError.notFound('未找到技师档案');
+    }
+    
+    // 处理密码更新
+    if (updateData.password) {
+      if (!updateData.currentPassword) {
+        throw createError.validation('更新密码时必须提供当前密码');
       }
       
-      const hours = updates.workingHours[day];
-      if (hours.start && hours.end) {
-        const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
-        if (!timeRegex.test(hours.start) || !timeRegex.test(hours.end)) {
-          throw createError.validation(`工作时间格式无效，应为HH:MM格式，例如 09:00`);
-        }
+      // 验证当前密码
+      const isCurrentPasswordValid = await bcrypt.compare(updateData.currentPassword, currentUser.password_hash);
+      if (!isCurrentPasswordValid) {
+        throw createError.authentication('当前密码错误');
       }
+      
+      // 加密新密码
+      const salt = await bcrypt.genSalt(10);
+      userUpdates.password_hash = await bcrypt.hash(updateData.password, salt);
+      
+      logger.info(`技师 ${user.id} 更新了密码`);
     }
-  }
-  
-  // 处理密码更新
-  if (updates.password) {
-    // 实际项目中应该验证旧密码并加密新密码
-    // const bcrypt = require('bcrypt');
-    // updates.password = await bcrypt.hash(updates.password, 10);
-    logger.info(`技师 ${user.id} 更新了密码`);
-  }
-  
-  // 更新技师信息（在数据库中）
-  // 实际项目中替换为数据库更新操作
-  
-  logger.info(`技师 ${user.id} 更新了个人资料`);
-  
-  ctx.body = {
-    status: 'success',
-    message: '个人资料已更新',
-    data: {
-      updatedFields: Object.keys(updates)
+    
+    const updatedFields = [];
+    
+    // 更新用户基本信息
+    if (Object.keys(userUpdates).length > 0) {
+      await User.update(userUpdates, {
+        where: { user_id: user.id }
+      });
+      
+      updatedFields.push(...Object.keys(userUpdates).map(key => 
+        key === 'password_hash' ? 'password' : key
+      ));
     }
-  };
+    
+    // 更新技师档案信息
+    if (Object.keys(profileUpdates).length > 0) {
+      await MechanicProfile.update(profileUpdates, {
+        where: { mechanic_id: user.id }
+      });
+      
+      // 映射字段名
+      const fieldMapping = {
+        hourly_rate: 'hourlyRate',
+        hire_date: 'hireDate',
+        cert_no: 'certNo'
+      };
+      
+      Object.keys(profileUpdates).forEach(key => {
+        updatedFields.push(fieldMapping[key] || key);
+      });
+    }
+    
+    logger.info(`技师 ${user.id} 更新了个人资料: ${updatedFields.join(', ')}`);
+    
+    ctx.body = {
+      status: 'success',
+      message: '个人资料已更新',
+      data: {
+        updatedFields
+      }
+    };
+  } catch (error) {
+    logger.error(`更新技师资料失败: ${error.message}`);
+    
+    if (error.isOperational) {
+      throw error;
+    }
+    
+    throw createError.internal('更新技师资料失败');
+  }
 };
 
 module.exports = {

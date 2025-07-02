@@ -1,5 +1,7 @@
+const { WorkOrder, Vehicle, User, WorkOrderMechanic, MechanicProfile, WorkOrderMaterial, Part, Feedback, Payment } = require('../../models');
 const { createError } = require('../../middleware/errorhandler');
 const { createLogger } = require('../../middleware/logger');
+const { Op } = require('sequelize');
 
 const logger = createLogger('WorkOrders');
 
@@ -17,7 +19,7 @@ const logger = createLogger('WorkOrders');
  *         name: status
  *         schema:
  *           type: string
- *           enum: [pending, accepted, in_progress, completed, cancelled]
+ *           enum: [pending, assigned, in_progress, done, cancelled]
  *         description: 工单状态过滤
  *       - in: query
  *         name: page
@@ -70,8 +72,6 @@ const logger = createLogger('WorkOrders');
  *                             type: string
  *                           mechanicName:
  *                             type: string
- *                           priority:
- *                             type: string
  *                           totalCost:
  *                             type: number
  *                     pagination:
@@ -91,70 +91,103 @@ const logger = createLogger('WorkOrders');
  *         description: 服务器错误
  */
 const getMyWorkOrders = async (ctx) => {
-  const { user } = ctx.state;
-  const { status, page = 1, limit = 10 } = ctx.query;
-  
-  // 构建查询条件
-  const query = { userId: user.id };
-  if (status) {
-    query.status = status;
+  try {
+    const { user } = ctx.state;
+    const { status, page = 1, limit = 10 } = ctx.query;
+    
+    const pageNum = parseInt(page);
+    const pageSize = parseInt(limit);
+    const offset = (pageNum - 1) * pageSize;
+    
+    // 构建查询条件
+    const whereClause = {};
+    if (status) {
+      whereClause.status = status;
+    }
+    
+    // 从数据库获取用户的工单
+    const { count, rows: workOrders } = await WorkOrder.findAndCountAll({
+      where: whereClause,
+      include: [
+        {
+          model: Vehicle,
+          as: 'vehicle',
+          where: { user_id: user.id },
+          attributes: ['vehicle_id', 'model', 'plate_no'],
+          required: true
+        },
+        {
+          model: WorkOrderMechanic,
+          as: 'mechanics',
+          include: [
+            {
+              model: MechanicProfile,
+              as: 'mechanic',
+              include: [
+                {
+                  model: User,
+                  as: 'user',
+                  attributes: ['user_id', 'name']
+                }
+              ]
+            }
+          ],
+          required: false
+        },
+        {
+          model: Payment,
+          as: 'payment',
+          attributes: ['total_fee'],
+          required: false
+        }
+      ],
+      attributes: ['order_id', 'description', 'trade', 'status', 'created_at', 'finished_at'],
+      order: [['created_at', 'DESC']],
+      limit: pageSize,
+      offset
+    });
+    
+    // 格式化返回数据
+    const formattedWorkOrders = workOrders.map(order => {
+      const mechanic = order.mechanics && order.mechanics.length > 0 ? order.mechanics[0] : null;
+      
+      return {
+        id: order.order_id,
+        vehicleId: order.vehicle.vehicle_id,
+        vehicleInfo: {
+          model: order.vehicle.model,
+          licensePlate: order.vehicle.plate_no
+        },
+        description: order.description,
+        trade: order.trade,
+        status: order.status,
+        createdAt: order.created_at,
+        finishedAt: order.finished_at,
+        estimatedCompletionTime: order.estimated_completion_time,
+        mechanicId: mechanic ? mechanic.mechanic.user.user_id : null,
+        mechanicName: mechanic ? mechanic.mechanic.user.name : null,
+        totalCost: order.payment ? parseFloat(order.payment.total_fee) : null
+      };
+    });
+    
+    logger.info(`用户 ${user.id} 获取了工单列表，共 ${count} 个工单`);
+    
+    ctx.body = {
+      status: 'success',
+      data: {
+        workOrders: formattedWorkOrders,
+        pagination: {
+          page: pageNum,
+          limit: pageSize,
+          total: count,
+          pages: Math.ceil(count / pageSize)
+        }
+      }
+    };
+  } catch (error) {
+    logger.error(`获取工单列表失败: ${error.message}`);
+    throw createError.internal('获取工单列表失败');
   }
-  
-  // 从数据库获取用户的工单
-  // 实际项目中替换为数据库查询
-  const workOrders = [
-    {
-      id: 'wo1',
-      vehicleId: 'v1',
-      vehicleInfo: {
-        make: '丰田',
-        model: '卡罗拉',
-        licensePlate: '京A12345'
-      },
-      description: '发动机异响，怠速不稳',
-      status: 'in_progress',
-      createdAt: '2023-05-15T08:30:00Z',
-      estimatedCompletionTime: '2023-05-17T16:00:00Z',
-      mechanicId: 'mech1',
-      mechanicName: '李师傅',
-      priority: 'normal',
-      totalCost: 1200
-    },
-    {
-      id: 'wo2',
-      vehicleId: 'v2',
-      vehicleInfo: {
-        make: '本田',
-        model: '思域',
-        licensePlate: '京B67890'
-      },
-      description: '更换刹车片，更换机油',
-      status: 'completed',
-      createdAt: '2023-04-10T09:15:00Z',
-      completedAt: '2023-04-10T15:45:00Z',
-      mechanicId: 'mech2',
-      mechanicName: '王师傅',
-      priority: 'normal',
-      totalCost: 800,
-      feedback: {
-        rating: 5,
-        comment: '服务非常满意，修理得很好'
-      }
-    }
-  ];
-  
-  ctx.body = {
-    status: 'success',
-    data: {
-      workOrders,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: workOrders.length,
-        pages: Math.ceil(workOrders.length / parseInt(limit))
-      }
-    }
-  };
 };
 
 /**
@@ -182,18 +215,15 @@ const getMyWorkOrders = async (ctx) => {
  *               description:
  *                 type: string
  *                 description: 问题描述
- *               preferredTime:
+ *               trade:
  *                 type: string
- *                 format: date-time
- *                 description: 期望服务时间
- *               additionalNotes:
+ *                 enum: [engine, paint, electric]
+ *                 description: 指定技师工种（可选，默认为engine）
+ *               urgency:
  *                 type: string
- *                 description: 额外说明
- *               priority:
- *                 type: string
- *                 enum: [low, normal, high, urgent]
- *                 default: normal
- *                 description: 优先级
+ *                 enum: [low, medium, high, urgent]
+ *                 default: medium
+ *                 description: 紧急程度
  *     responses:
  *       201:
  *         description: 创建成功
@@ -222,78 +252,97 @@ const getMyWorkOrders = async (ctx) => {
  *       404:
  *         description: 未找到车辆
  *       409:
- *         description: 车辆已有类似的未完成工单
+ *         description: 车辆已有未完成工单
  *       500:
  *         description: 服务器错误
  */
 const createWorkOrder = async (ctx) => {
-  const { user } = ctx.state;
-  const orderData = ctx.request.body;
-  
-  // 验证工单数据
-  const requiredFields = ['vehicleId', 'description'];
-  
-  for (const field of requiredFields) {
-    if (!orderData[field]) {
-      throw createError.validation(`缺少必填字段: ${field}`);
+  try {
+    const { user } = ctx.state;
+    const orderData = ctx.request.body;
+    
+    // 验证工单数据
+    const requiredFields = ['vehicleId', 'description'];
+    
+    for (const field of requiredFields) {
+      if (!orderData[field]) {
+        throw createError.validation(`缺少必填字段: ${field}`);
+      }
     }
-  }
-  
-  // 检查车辆是否存在并属于该用户
-  // 实际项目中替换为数据库查询
-  const vehicle = {
-    id: orderData.vehicleId,
-    make: '丰田',
-    model: '卡罗拉',
-    licensePlate: '京A12345',
-    userId: user.id
-  };
-  
-  if (!vehicle) {
-    throw createError.notFound('未找到该车辆');
-  }
-  
-  if (vehicle.userId !== user.id) {
-    throw createError.authorization('无权为该车辆创建工单');
-  }
-  
-  // 检查是否有未完成的相同工单
-  // 实际项目中替换为数据库查询
-  const hasSimilarActiveOrder = false;
-  
-  if (hasSimilarActiveOrder) {
-    throw createError.conflict('该车辆已有类似的未完成工单');
-  }
-  
-  // 创建新工单（保存到数据库）
-  const newWorkOrder = {
-    id: 'wo' + Date.now(),
-    userId: user.id,
-    vehicleId: orderData.vehicleId,
-    vehicleInfo: {
-      make: vehicle.make,
-      model: vehicle.model,
-      licensePlate: vehicle.licensePlate
-    },
-    description: orderData.description,
-    preferredTime: orderData.preferredTime || null,
-    additionalNotes: orderData.additionalNotes || '',
-    status: 'pending',
-    priority: orderData.priority || 'normal',
-    createdAt: new Date(),
-    updatedAt: new Date()
-  };
-  
-  logger.info(`用户 ${user.id} 为车辆 ${vehicle.id} 创建了新工单`);
-  
-  ctx.status = 201;
-  ctx.body = {
-    status: 'success',
-    message: '工单创建成功',
-    data: {
-      workOrder: newWorkOrder
+    
+    // 验证trade字段（如果提供）
+    const validTrades = ['engine', 'paint', 'electric'];
+    if (orderData.trade && !validTrades.includes(orderData.trade)) {
+      throw createError.validation('技师工种必须是: engine, paint, electric 之一');
     }
-  };
+    
+    // 检查车辆是否存在并属于该用户
+    const vehicle = await Vehicle.findOne({
+      where: { vehicle_id: orderData.vehicleId },
+      attributes: ['vehicle_id', 'user_id', 'model', 'plate_no']
+    });
+    
+    if (!vehicle) {
+      throw createError.notFound('未找到该车辆');
+    }
+    
+    if (vehicle.user_id !== user.id) {
+      throw createError.authorization('无权为该车辆创建工单');
+    }
+    
+    // 检查是否有未完成的工单
+    const hasActiveOrder = await WorkOrder.count({
+      where: {
+        vehicle_id: orderData.vehicleId,
+        status: {
+          [Op.in]: ['pending', 'assigned', 'in_progress']
+        }
+      }
+    });
+    
+    if (hasActiveOrder > 0) {
+      throw createError.conflict('该车辆已有未完成的工单');
+    }
+    
+    // 创建新工单
+    const newWorkOrder = await WorkOrder.create({
+      vehicle_id: orderData.vehicleId,
+      customer_id: user.id,
+      description: orderData.description,
+      trade: orderData.trade || 'engine', // 默认为发动机维修
+      status: 'pending'
+    });
+    
+    logger.info(`用户 ${user.id} 为车辆 ${vehicle.vehicle_id} 创建了新工单 ${newWorkOrder.order_id}，指定技师工种: ${newWorkOrder.trade}`);
+    
+    ctx.status = 201;
+    ctx.body = {
+      status: 'success',
+      message: '工单创建成功',
+      data: {
+        workOrder: {
+          id: newWorkOrder.order_id,
+          vehicleId: newWorkOrder.vehicle_id,
+          vehicleInfo: {
+            model: vehicle.model,
+            licensePlate: vehicle.plate_no
+          },
+          description: newWorkOrder.description,
+          trade: newWorkOrder.trade,
+          status: newWorkOrder.status,
+          createdAt: newWorkOrder.created_at
+        }
+      }
+    };
+  } catch (error) {
+    logger.error(`创建工单失败: ${error.message}`);
+    
+    if (error.isOperational) {
+      throw error;
+    }
+    
+    throw createError.internal('创建工单失败');
+  }
 };
 
 /**
@@ -331,8 +380,6 @@ const createWorkOrder = async (ctx) => {
  *                       properties:
  *                         id:
  *                           type: string
- *                         userId:
- *                           type: string
  *                         vehicleId:
  *                           type: string
  *                         vehicleInfo:
@@ -349,14 +396,8 @@ const createWorkOrder = async (ctx) => {
  *                           format: date-time
  *                         mechanicInfo:
  *                           type: object
- *                         priority:
- *                           type: string
- *                         progressUpdates:
- *                           type: array
  *                         materials:
  *                           type: array
- *                         laborCost:
- *                           type: number
  *                         totalCost:
  *                           type: number
  *       401:
@@ -369,78 +410,146 @@ const createWorkOrder = async (ctx) => {
  *         description: 服务器错误
  */
 const getWorkOrderById = async (ctx) => {
-  const { user } = ctx.state;
-  const orderId = ctx.params.id;
-  
-  // 从数据库获取工单信息
-  // 实际项目中替换为数据库查询
-  const workOrder = {
-    id: orderId,
-    userId: user.id,
-    vehicleId: 'v1',
-    vehicleInfo: {
-      make: '丰田',
-      model: '卡罗拉',
-      licensePlate: '京A12345',
-      vin: 'ABC123456789'
-    },
-    description: '发动机异响，怠速不稳',
-    status: 'in_progress',
-    createdAt: '2023-05-15T08:30:00Z',
-    estimatedCompletionTime: '2023-05-17T16:00:00Z',
-    mechanicId: 'mech1',
-    mechanicInfo: {
-      name: '李师傅',
-      phone: '13900001111',
-      specialties: ['发动机维修', '电子系统诊断']
-    },
-    priority: 'normal',
-    progressUpdates: [
-      {
-        time: '2023-05-15T10:30:00Z',
-        status: 'accepted',
-        note: '工单已接受，正在准备零件'
-      },
-      {
-        time: '2023-05-16T09:15:00Z',
-        status: 'in_progress',
-        note: '已开始检查发动机，初步诊断为火花塞问题'
-      }
-    ],
-    materials: [
-      {
-        name: '火花塞',
-        quantity: 4,
-        unitPrice: 150,
-        total: 600
-      },
-      {
-        name: '机油',
-        quantity: 1,
-        unitPrice: 300,
-        total: 300
-      }
-    ],
-    laborCost: 300,
-    totalCost: 1200
-  };
-  
-  // 检查工单是否存在
-  if (!workOrder) {
-    throw createError.notFound('未找到该工单');
-  }
-  
-  // 检查工单是否属于当前用户
-  if (workOrder.userId !== user.id) {
-    throw createError.authorization('无权查看该工单');
-  }
-  
-  ctx.body = {
-    status: 'success',
-    data: {
-      workOrder
+  try {
+    const { user } = ctx.state;
+    const orderId = ctx.params.id;
+    
+    // 从数据库获取工单详细信息
+    const workOrder = await WorkOrder.findOne({
+      where: { order_id: orderId },
+      include: [
+        {
+          model: Vehicle,
+          as: 'vehicle',
+          attributes: ['vehicle_id', 'user_id', 'model', 'plate_no', 'vin'],
+          required: true
+        },
+        {
+          model: WorkOrderMechanic,
+          as: 'mechanics',
+          include: [
+            {
+              model: MechanicProfile,
+              as: 'mechanic',
+              include: [
+                {
+                  model: User,
+                  as: 'user',
+                  attributes: ['user_id', 'name']
+                }
+              ],
+              attributes: ['trade']
+            }
+          ],
+          attributes: ['status'],
+          required: false
+        },
+        {
+          model: WorkOrderMaterial,
+          as: 'materials',
+          include: [
+            {
+              model: Part,
+              as: 'part',
+              attributes: ['name', 'unit']
+            }
+          ],
+          attributes: ['qty', 'price'],
+          required: false
+        },
+        {
+          model: Payment,
+          as: 'payment',
+          attributes: ['total_fee', 'labor_fee'],
+          required: false
+        },
+        {
+          model: Feedback,
+          as: 'feedbacks',
+          attributes: ['rating', 'comment', 'created_at'],
+          required: false
+        }
+      ]
+    });
+    
+    // 检查工单是否存在
+    if (!workOrder) {
+      throw createError.notFound('未找到该工单');
     }
-  };
+    
+    // 检查工单是否属于当前用户
+    if (workOrder.vehicle.user_id !== user.id) {
+      throw createError.authorization('无权查看该工单');
+    }
+    
+    // 计算费用
+    const materialCost = workOrder.materials ? workOrder.materials.reduce((sum, material) => {
+      return sum + (parseFloat(material.price) * material.qty);
+    }, 0) : 0;
+    
+    // 从Payment表获取人工费，而不是计算
+    const laborCost = workOrder.payment ? parseFloat(workOrder.payment.labor_fee || 0) : 0;
+    
+    // 格式化材料信息
+    const materials = workOrder.materials ? workOrder.materials.map(material => ({
+      name: material.part.name,
+      quantity: material.qty,
+      unit: material.part.unit,
+      unitPrice: parseFloat(material.price),
+      total: parseFloat(material.price) * material.qty
+    })) : [];
+    
+    // 格式化技师信息（移除工时相关计算）
+    const mechanicInfo = workOrder.mechanics && workOrder.mechanics.length > 0 ? {
+      name: workOrder.mechanics[0].mechanic.user.name,
+      trade: workOrder.mechanics[0].mechanic.trade
+    } : null;
+    
+    const workOrderDetails = {
+      id: workOrder.order_id,
+      vehicleId: workOrder.vehicle.vehicle_id,
+      vehicleInfo: {
+        model: workOrder.vehicle.model,
+        licensePlate: workOrder.vehicle.plate_no,
+        vin: workOrder.vehicle.vin
+      },
+      description: workOrder.description,
+      trade: workOrder.trade,
+      status: workOrder.status,
+      createdAt: workOrder.created_at,
+      finishedAt: workOrder.finished_at,
+      mechanicInfo,
+      materials,
+      materialCost: parseFloat(materialCost.toFixed(2)),
+      laborCost: parseFloat(laborCost.toFixed(2)),
+      totalCost: parseFloat((materialCost + laborCost).toFixed(2)),
+      paymentInfo: workOrder.payment ? {
+        total_fee: parseFloat(workOrder.payment.total_fee),
+      } : null,
+      feedback: workOrder.feedbacks && workOrder.feedbacks.length > 0 ? {
+        rating: workOrder.feedbacks[0].rating,
+        comment: workOrder.feedbacks[0].comment,
+        createdAt: workOrder.feedbacks[0].created_at
+      } : null
+    };
+    
+    logger.info(`用户 ${user.id} 查看了工单 ${orderId} 的详情`);
+    
+    ctx.body = {
+      status: 'success',
+      data: {
+        workOrder: workOrderDetails
+      }
+    };
+  } catch (error) {
+    logger.error(`获取工单详情失败: ${error.message}`);
+    
+    if (error.isOperational) {
+      throw error;
+    }
+    
+    throw createError.internal('获取工单详情失败');
+  }
 };
 
 /**
@@ -517,186 +626,92 @@ const getWorkOrderById = async (ctx) => {
  *         description: 服务器错误
  */
 const addWorkOrderFeedback = async (ctx) => {
-  const { user } = ctx.state;
-  const orderId = ctx.params.id;
-  const { rating, comment } = ctx.request.body;
-  
-  // 验证评价数据
-  if (!rating || rating < 1 || rating > 5) {
-    throw createError.validation('评分必须在1-5之间');
-  }
-  
-  // 获取工单信息（从数据库）
-  // 实际项目中替换为数据库查询
-  const workOrder = {
-    id: orderId,
-    userId: user.id,
-    status: 'completed',
-    mechanicId: 'mech1',
-    feedback: null
-  };
-  
-  // 检查工单是否存在
-  if (!workOrder) {
-    throw createError.notFound('未找到该工单');
-  }
-  
-  // 检查工单是否属于当前用户
-  if (workOrder.userId !== user.id) {
-    throw createError.authorization('无权为该工单添加评价');
-  }
-  
-  // 检查工单是否已完成
-  if (workOrder.status !== 'completed') {
-    throw createError.validation('只能为已完成的工单添加评价');
-  }
-  
-  // 检查是否已评价
-  if (workOrder.feedback) {
-    throw createError.conflict('该工单已有评价');
-  }
-  
-  // 添加评价（保存到数据库）
-  const feedback = {
-    rating,
-    comment: comment || '',
-    createdAt: new Date()
-  };
-  
-  logger.info(`用户 ${user.id} 为工单 ${orderId} 添加了评价，评分: ${rating}`);
-  
-  ctx.body = {
-    status: 'success',
-    message: '评价添加成功',
-    data: {
-      feedback
-    }
-  };
-};
-
-/**
- * @swagger
- * /api/customers/work-orders/{id}/urge:
- *   post:
- *     summary: 催促工单
- *     description: 催促技师尽快完成工单
- *     tags: [Customers]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: 工单ID
- *     requestBody:
- *       required: false
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               message:
- *                 type: string
- *                 description: 催促留言
- *     responses:
- *       200:
- *         description: 成功
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: success
- *                 message:
- *                   type: string
- *                   example: 催促成功，已通知技师
- *                 data:
- *                   type: object
- *                   properties:
- *                     urgeRecord:
- *                       type: object
- *       400:
- *         description: 请求参数错误
- *       401:
- *         description: 未授权
- *       403:
- *         description: 无权催促该工单
- *       404:
- *         description: 未找到工单
- *       429:
- *         description: 请求过于频繁
- *       500:
- *         description: 服务器错误
- */
-const urgeWorkOrder = async (ctx) => {
-  const { user } = ctx.state;
-  const orderId = ctx.params.id;
-  const { message } = ctx.request.body;
-  
-  // 获取工单信息（从数据库）
-  // 实际项目中替换为数据库查询
-  const workOrder = {
-    id: orderId,
-    userId: user.id,
-    status: 'in_progress',
-    mechanicId: 'mech1',
-    lastUrgedAt: null
-  };
-  
-  // 检查工单是否存在
-  if (!workOrder) {
-    throw createError.notFound('未找到该工单');
-  }
-  
-  // 检查工单是否属于当前用户
-  if (workOrder.userId !== user.id) {
-    throw createError.authorization('无权催促该工单');
-  }
-  
-  // 检查工单状态是否可催促
-  const urgableStatuses = ['accepted', 'in_progress', 'pending'];
-  if (!urgableStatuses.includes(workOrder.status)) {
-    throw createError.validation(`状态为 ${workOrder.status} 的工单不能催促`);
-  }
-  
-  // 检查上次催促时间，避免频繁催促
-  if (workOrder.lastUrgedAt) {
-    const lastUrged = new Date(workOrder.lastUrgedAt);
-    const hoursSinceLastUrge = (Date.now() - lastUrged.getTime()) / (1000 * 60 * 60);
+  try {
+    const { user } = ctx.state;
+    const orderId = ctx.params.id;
+    const { rating, comment } = ctx.request.body;
     
-    if (hoursSinceLastUrge < 4) {
-      throw createError.rateLimit('请勿频繁催促，4小时内只能催促一次');
+    // 验证评价数据
+    if (!rating || rating < 1 || rating > 5) {
+      throw createError.validation('评分必须在1-5之间');
     }
+    
+    // 获取工单信息
+    const workOrder = await WorkOrder.findOne({
+      where: { order_id: orderId },
+      include: [
+        {
+          model: Vehicle,
+          as: 'vehicle',
+          attributes: ['user_id'],
+          required: true
+        },
+        {
+          model: Feedback,
+          as: 'feedbacks',
+          attributes: ['feedback_id'],
+          required: false
+        }
+      ],
+      attributes: ['order_id', 'status']
+    });
+    
+    // 检查工单是否存在
+    if (!workOrder) {
+      throw createError.notFound('未找到该工单');
+    }
+    
+    // 检查工单是否属于当前用户
+    if (workOrder.vehicle.user_id !== user.id) {
+      throw createError.authorization('无权为该工单添加评价');
+    }
+    
+    // 检查工单是否已完成
+    if (workOrder.status !== 'done') {
+      throw createError.validation('只能为已完成的工单添加评价');
+    }
+    
+    // 检查是否已评价
+    if (workOrder.feedbacks && workOrder.feedbacks.length > 0) {
+      throw createError.conflict('该工单已有评价');
+    }
+    
+    // 添加评价
+    const feedback = await Feedback.create({
+      order_id: orderId,
+      user_id: user.id,
+      rating,
+      comment: comment || '',
+      type: 'rating'
+    });
+    
+    logger.info(`用户 ${user.id} 为工单 ${orderId} 添加了评价，评分: ${rating}`);
+    
+    ctx.body = {
+      status: 'success',
+      message: '评价添加成功',
+      data: {
+        feedback: {
+          rating: feedback.rating,
+          comment: feedback.comment,
+          createdAt: feedback.created_at
+        }
+      }
+    };
+  } catch (error) {
+    logger.error(`添加工单评价失败: ${error.message}`);
+    
+    if (error.isOperational) {
+      throw error;
+    }
+    
+    throw createError.internal('添加工单评价失败');
   }
-  
-  // 记录催促信息（保存到数据库）
-  const urgeRecord = {
-    workOrderId: orderId,
-    userId: user.id,
-    mechanicId: workOrder.mechanicId,
-    message: message || '客户催促完成工单',
-    createdAt: new Date()
-  };
-  
-  logger.info(`用户 ${user.id} 催促了工单 ${orderId}`);
-  
-  ctx.body = {
-    status: 'success',
-    message: '催促成功，已通知技师',
-    data: {
-      urgeRecord
-    }
-  };
 };
 
 module.exports = {
   getMyWorkOrders,
   createWorkOrder,
   getWorkOrderById,
-  addWorkOrderFeedback,
-  urgeWorkOrder
+  addWorkOrderFeedback
 };

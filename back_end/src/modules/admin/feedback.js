@@ -1,22 +1,51 @@
+const { createError } = require('../../middleware/errorhandler');
 const { createLogger } = require('../../middleware/logger');
+const { Feedback, WorkOrder, User, Vehicle } = require('../../models');
+const { Op } = require('sequelize');
 
-const logger = createLogger('AdminReports');
+const logger = createLogger('AdminFeedback');
 
 /**
  * @swagger
- * /api/admin/negative-feedback:
+ * /api/admin/feedback:
  *   get:
- *     summary: 获取负面反馈分析报表
- *     description: 获取指定时间范围内的负面反馈分析统计数据
+ *     summary: 获取反馈列表
+ *     description: 获取系统中的反馈记录，支持按类型、状态、日期等过滤
  *     tags: [Admin]
  *     parameters:
  *       - in: query
- *         name: timeRange
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *         default: 1
+ *         description: 页码
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *         default: 10
+ *         description: 每页记录数
+ *       - in: query
+ *         name: type
  *         schema:
  *           type: string
- *           enum: [day, week, month, year]
- *         default: month
- *         description: 时间范围
+ *           enum: [rating, urge, advice, complaint]
+ *         description: 反馈类型
+ *       - in: query
+ *         name: rating
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 5
+ *         description: 评分等级（仅对rating类型有效）
+ *       - in: query
+ *         name: customer
+ *         schema:
+ *           type: string
+ *         description: 客户ID或姓名
  *       - in: query
  *         name: startDate
  *         schema:
@@ -29,14 +58,6 @@ const logger = createLogger('AdminReports');
  *           type: string
  *           format: date
  *         description: 结束日期 (YYYY-MM-DD)
- *       - in: query
- *         name: minRating
- *         schema:
- *           type: integer
- *           minimum: 1
- *           maximum: 5
- *         default: 3
- *         description: 最低评分阈值（小于等于此值的评分被视为负面反馈）
  *     responses:
  *       200:
  *         description: 成功
@@ -51,141 +72,344 @@ const logger = createLogger('AdminReports');
  *                 data:
  *                   type: object
  *                   properties:
- *                     timeRange:
- *                       type: string
- *                     startDate:
- *                       type: string
- *                     endDate:
- *                       type: string
- *                     totalFeedback:
- *                       type: number
- *                     negativeFeedbackCount:
- *                       type: number
- *                     negativeFeedbackRate:
- *                       type: number
- *                     averageRating:
- *                       type: number
- *                     ratingDistribution:
+ *                     feedback:
  *                       type: array
- *                     commonIssues:
- *                       type: array
- *                     mechanicPerformance:
- *                       type: array
- *                     serviceTypeIssues:
- *                       type: array
- *                     feedbackTrend:
- *                       type: array
- *                     recentNegativeFeedback:
- *                       type: array
- *       400:
- *         description: 请求参数错误
+ *                       items:
+ *                         type: object
+ *                     statistics:
+ *                       type: object
+ *                       properties:
+ *                         averageRating:
+ *                           type: number
+ *                         totalCount:
+ *                           type: integer
+ *                         ratingCount:
+ *                           type: integer
+ *                         urgeCount:
+ *                           type: integer
+ *                         adviceCount:
+ *                           type: integer
+ *                         complaintCount:
+ *                           type: integer
+ *                         ratingDistribution:
+ *                           type: object
+ *                     pagination:
+ *                       type: object
  *       401:
  *         description: 未授权
  *       500:
  *         description: 服务器错误
  */
-const getNegativeFeedbackStats = async (ctx) => {
-  const { timeRange = 'month', startDate, endDate, minRating = 3 } = ctx.query;
+const getFeedbackList = async (ctx) => {
+  const { page = 1, limit = 10, type, rating, customer, startDate, endDate } = ctx.query;
   
-  // 构建查询条件
-  const query = { 
-    timeRange,
-    minRating: parseInt(minRating)
-  };
-  
-  if (startDate) {
-    query.startDate = startDate;
-  }
-  
-  if (endDate) {
-    query.endDate = endDate;
-  }
-  
-  // 从数据库获取统计数据
-  // 实际项目中替换为数据库聚合查询
-  
-  // 负面反馈分析
-  const negativeFeedbackStats = {
-    timeRange: query.timeRange,
-    startDate: query.startDate || '2023-01-01',
-    endDate: query.endDate || '2023-05-31',
-    totalFeedback: 186,
-    negativeFeedbackCount: 28,
-    negativeFeedbackRate: 15.05,
-    averageRating: 4.2,
-    ratingDistribution: [
-      { rating: 1, count: 5, percentage: 2.69 },
-      { rating: 2, count: 8, percentage: 4.30 },
-      { rating: 3, count: 15, percentage: 8.06 },
-      { rating: 4, count: 76, percentage: 40.86 },
-      { rating: 5, count: 82, percentage: 44.09 }
-    ],
-    commonIssues: [
-      { issue: '维修时间过长', count: 12, percentage: 42.86 },
-      { issue: '服务态度不佳', count: 8, percentage: 28.57 },
-      { issue: '维修质量问题', count: 5, percentage: 17.86 },
-      { issue: '价格过高', count: 3, percentage: 10.71 }
-    ],
-    mechanicPerformance: [
-      { mechanicId: 'mech2', name: '王师傅', totalOrders: 42, negativeCount: 8, negativeRate: 19.05 },
-      { mechanicId: 'mech5', name: '刘师傅', totalOrders: 35, negativeCount: 6, negativeRate: 17.14 },
-      { mechanicId: 'mech1', name: '李师傅', totalOrders: 55, negativeCount: 5, negativeRate: 9.09 },
-      { mechanicId: 'mech3', name: '张师傅', totalOrders: 38, negativeCount: 3, negativeRate: 7.89 },
-      { mechanicId: 'mech4', name: '赵师傅', totalOrders: 16, negativeCount: 1, negativeRate: 6.25 }
-    ],
-    serviceTypeIssues: [
-      { serviceType: '发动机维修', totalOrders: 43, negativeCount: 9, negativeRate: 20.93 },
-      { serviceType: '变速箱维修', totalOrders: 21, negativeCount: 4, negativeRate: 19.05 },
-      { serviceType: '电子系统', totalOrders: 38, negativeCount: 6, negativeRate: 15.79 },
-      { serviceType: '常规保养', totalOrders: 68, negativeCount: 5, negativeRate: 7.35 },
-      { serviceType: '轮胎更换', totalOrders: 16, negativeCount: 1, negativeRate: 6.25 }
-    ],
-    feedbackTrend: [
-      { month: '1月', totalCount: 32, negativeCount: 6, negativeRate: 18.75 },
-      { month: '2月', totalCount: 35, negativeCount: 7, negativeRate: 20.00 },
-      { month: '3月', totalCount: 38, negativeCount: 6, negativeRate: 15.79 },
-      { month: '4月', totalCount: 40, negativeCount: 5, negativeRate: 12.50 },
-      { month: '5月', totalCount: 41, negativeCount: 4, negativeRate: 9.76 }
-    ],
-    recentNegativeFeedback: [
-      {
-        workOrderId: 'wo45',
-        date: '2023-05-18T09:45:00Z',
-        customer: '王五',
-        rating: 2,
-        comment: '等待时间太长，比约定的时间晚了2小时完成',
-        mechanic: '王师傅',
-        serviceType: '发动机维修'
-      },
-      {
-        workOrderId: 'wo39',
-        date: '2023-05-10T14:20:00Z',
-        customer: '张三',
-        rating: 1,
-        comment: '维修后问题依然存在，需要返修',
-        mechanic: '刘师傅',
-        serviceType: '电子系统'
-      },
-      {
-        workOrderId: 'wo32',
-        date: '2023-04-28T16:15:00Z',
-        customer: '李四',
-        rating: 2,
-        comment: '价格比预估高出很多，没有事先沟通',
-        mechanic: '王师傅',
-        serviceType: '变速箱维修'
+  try {
+    // 构建查询条件
+    const whereClause = {};
+    const userWhereClause = {};
+    
+    if (type) {
+      whereClause.type = type;
+    }
+    
+    if (rating && type === 'rating') {
+      whereClause.rating = rating;
+    }
+    
+    if (customer) {
+      if (isNaN(customer)) {
+        userWhereClause.name = { [Op.like]: `%${customer}%` };
+      } else {
+        whereClause.user_id = customer;
       }
-    ]
-  };
+    }
+    
+    if (startDate && endDate) {
+      whereClause.created_at = {
+        [Op.between]: [new Date(startDate), new Date(endDate)]
+      };
+    } else if (startDate) {
+      whereClause.created_at = {
+        [Op.gte]: new Date(startDate)
+      };
+    } else if (endDate) {
+      whereClause.created_at = {
+        [Op.lte]: new Date(endDate)
+      };
+    }
+    
+    // 查询反馈记录
+    const { count, rows: feedbacks } = await Feedback.findAndCountAll({
+      where: whereClause,
+      include: [
+        {
+          model: User,
+          as: 'customer',
+          where: Object.keys(userWhereClause).length > 0 ? userWhereClause : undefined,
+          attributes: ['user_id', 'name'],
+          required: true
+        },
+        {
+          model: WorkOrder,
+          as: 'workOrder',
+          attributes: ['order_id', 'description'],
+          include: [
+            {
+              model: Vehicle,
+              as: 'vehicle',
+              attributes: ['plate_no']
+            }
+          ],
+          required: false
+        }
+      ],
+      attributes: ['feedback_id', 'type', 'rating', 'comment', 'reply', 'created_at'],
+      offset: (page - 1) * limit,
+      limit: parseInt(limit),
+      order: [['created_at', 'DESC']]
+    });
+
+    // 处理数据
+    const processedFeedbacks = feedbacks.map(feedback => ({
+      id: feedback.feedback_id,
+      type: feedback.type,
+      rating: feedback.rating,
+      comment: feedback.comment,
+      reply: feedback.reply,
+      createdAt: feedback.created_at,
+      customer: {
+        id: feedback.customer.user_id,
+        name: feedback.customer.name
+      },
+      workOrder: feedback.workOrder ? {
+        id: feedback.workOrder.order_id,
+        description: feedback.workOrder.description,
+        vehiclePlate: feedback.workOrder.vehicle?.plate_no
+      } : null
+    }));
+
+    // 计算统计信息
+    const allFeedbacks = await Feedback.findAll({
+      where: whereClause,
+      include: [
+        {
+          model: User,
+          as: 'customer',
+          where: Object.keys(userWhereClause).length > 0 ? userWhereClause : undefined,
+          attributes: [],
+          required: true
+        }
+      ],
+      attributes: ['type', 'rating']
+    });
+
+    const ratingFeedbacks = allFeedbacks.filter(f => f.type === 'rating' && f.rating);
+    const averageRating = ratingFeedbacks.length > 0 
+      ? ratingFeedbacks.reduce((sum, f) => sum + f.rating, 0) / ratingFeedbacks.length 
+      : 0;
+
+    const ratingDistribution = [1, 2, 3, 4, 5].reduce((dist, level) => {
+      dist[level] = ratingFeedbacks.filter(f => f.rating === level).length;
+      return dist;
+    }, {});
+
+    const statistics = {
+      averageRating: parseFloat(averageRating.toFixed(2)),
+      totalCount: allFeedbacks.length,
+      ratingCount: allFeedbacks.filter(f => f.type === 'rating').length,
+      urgeCount: allFeedbacks.filter(f => f.type === 'urge').length,
+      adviceCount: allFeedbacks.filter(f => f.type === 'advice').length,
+      complaintCount: allFeedbacks.filter(f => f.type === 'complaint').length,
+      ratingDistribution
+    };
+    
+    logger.info(`管理员查询了反馈列表，返回 ${feedbacks.length} 条记录`);
+    
+    ctx.body = {
+      status: 'success',
+      data: {
+        feedback: processedFeedbacks,
+        statistics,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: count,
+          pages: Math.ceil(count / parseInt(limit))
+        }
+      }
+    };
+  } catch (error) {
+    logger.error('获取反馈列表失败:', error);
+    throw createError.internal('获取反馈列表失败');
+  }
+};
+
+/**
+ * @swagger
+ * /api/admin/feedback/{id}:
+ *   patch:
+ *     summary: 回复反馈
+ *     description: 管理员对客户反馈进行回复
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 反馈ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - reply
+ *             properties:
+ *               reply:
+ *                 type: string
+ *                 description: 回复内容
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     feedbackId:
+ *                       type: string
+ *                     reply:
+ *                       type: string
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 反馈不存在
+ *       500:
+ *         description: 服务器错误
+ */
+const replyToFeedback = async (ctx) => {
+  const feedbackId = ctx.params.id;
+  const { reply } = ctx.request.body;
   
-  logger.info(`管理员查询了负面反馈分析报表`);
+  try {
+    // 验证输入
+    if (!reply || reply.trim().length === 0) {
+      throw createError.validation('回复内容不能为空');
+    }
+    
+    // 获取反馈记录
+    const feedback = await Feedback.findByPk(feedbackId);
+    
+    if (!feedback) {
+      throw createError.notFound('反馈不存在');
+    }
+    
+    // 检查是否已经回复过
+    if (feedback.reply) {
+      throw createError.conflict('该反馈已经回复过了');
+    }
+    
+    // 更新反馈记录
+    await feedback.update({
+      reply: reply.trim()
+    });
+    
+    logger.info(`管理员回复了反馈 ${feedbackId}`);
+    
+    ctx.body = {
+      status: 'success',
+      message: '反馈回复成功',
+      data: {
+        feedbackId,
+        reply: reply.trim()
+      }
+    };
+  } catch (error) {
+    if (error.status) {
+      throw error;
+    }
+    logger.error(`回复反馈失败 (ID: ${feedbackId}):`, error);
+    throw createError.internal('回复反馈失败');
+  }
+};
+
+/**
+ * @swagger
+ * /api/admin/feedback/{id}:
+ *   delete:
+ *     summary: 删除反馈
+ *     description: 管理员删除不合适的反馈记录
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 反馈ID
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 反馈不存在
+ *       500:
+ *         description: 服务器错误
+ */
+const deleteFeedback = async (ctx) => {
+  const feedbackId = ctx.params.id;
   
-  ctx.body = {
-    status: 'success',
-    data: negativeFeedbackStats
-  };
+  try {
+    // 获取反馈记录
+    const feedback = await Feedback.findByPk(feedbackId);
+    
+    if (!feedback) {
+      throw createError.notFound('反馈不存在');
+    }
+    
+    // 删除反馈记录
+    await feedback.destroy();
+    
+    logger.info(`管理员删除了反馈 ${feedbackId}`);
+    
+    ctx.body = {
+      status: 'success',
+      message: '反馈已删除'
+    };
+  } catch (error) {
+    if (error.status) {
+      throw error;
+    }
+    logger.error(`删除反馈失败 (ID: ${feedbackId}):`, error);
+    throw createError.internal('删除反馈失败');
+  }
 };
 
 module.exports = {
-  getNegativeFeedbackStats
+  getFeedbackList,
+  replyToFeedback,
+  deleteFeedback
 };

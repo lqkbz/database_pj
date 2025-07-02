@@ -1,14 +1,16 @@
 const { createError } = require('../../middleware/errorhandler');
 const { createLogger } = require('../../middleware/logger');
+const { User, MechanicProfile, WorkOrderMechanic, WorkOrder } = require('../../models');
+const { Op } = require('sequelize');
 
 const logger = createLogger('AdminMechanicManagement');
 
 /**
  * @swagger
- * /api/admin/mechanics:
+ * /admin/mechanics:
  *   get:
- *     summary: 获取所有技师列表
- *     description: 获取系统中所有技师的列表，支持分页、搜索和过滤
+ *     summary: 获取技师列表
+ *     description: 获取系统中所有技师的列表，支持分页和搜索
  *     tags: [Admin]
  *     parameters:
  *       - in: query
@@ -30,18 +32,13 @@ const logger = createLogger('AdminMechanicManagement');
  *         name: search
  *         schema:
  *           type: string
- *         description: 搜索关键词（技师姓名、电话、邮箱等）
+ *         description: 搜索关键词（姓名）
  *       - in: query
- *         name: specialty
+ *         name: trade
  *         schema:
  *           type: string
- *         description: 按专业领域筛选
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *           enum: [active, inactive, suspended]
- *         description: 技师状态
+ *           enum: [engine, paint, electric]
+ *         description: 专业领域过滤
  *     responses:
  *       200:
  *         description: 成功
@@ -55,97 +52,86 @@ const logger = createLogger('AdminMechanicManagement');
  *                   example: success
  *                 data:
  *                   type: object
- *                   properties:
- *                     mechanics:
- *                       type: array
- *                       items:
- *                         type: object
- *                     pagination:
- *                       type: object
  *       401:
  *         description: 未授权
  *       500:
  *         description: 服务器错误
  */
 const listMechanics = async (ctx) => {
-  const { page = 1, limit = 10, search, specialty, status } = ctx.query;
+  const { page = 1, limit = 10, search, trade } = ctx.query;
   
-  // 构建查询条件
-  const query = {};
-  if (search) {
-    // 实际项目中替换为搜索条件
-    query.search = search;
-  }
-  
-  if (specialty) {
-    query.specialty = specialty;
-  }
-  
-  if (status) {
-    query.status = status;
-  }
-  
-  // 从数据库获取技师列表
-  // 实际项目中替换为数据库查询
-  const mechanics = [
-    {
-      id: 'mech1',
-      name: '李师傅',
-      phone: '13911112222',
-      email: 'lishifu@example.com',
-      specialties: ['发动机维修', '电子系统诊断', '底盘调校'],
-      qualification: '高级汽车维修技师',
-      status: 'active',
-      joinDate: '2020-03-15',
-      rating: 4.8,
-      completedOrders: 356,
-      currentLoad: 3
-    },
-    {
-      id: 'mech2',
-      name: '王师傅',
-      phone: '13922223333',
-      email: 'wangshifu@example.com',
-      specialties: ['钣金喷漆', '车身维修', '空调系统'],
-      qualification: '中级汽车维修技师',
-      status: 'active',
-      joinDate: '2021-05-10',
-      rating: 4.5,
-      completedOrders: 220,
-      currentLoad: 2
-    },
-    {
-      id: 'mech3',
-      name: '张师傅',
-      phone: '13933334444',
-      email: 'zhangshifu@example.com',
-      specialties: ['变速箱维修', '离合器更换', '悬挂系统'],
-      qualification: '高级汽车维修技师',
-      status: 'inactive',
-      joinDate: '2019-11-20',
-      rating: 4.7,
-      completedOrders: 410,
-      currentLoad: 0
+  try {
+    // 构建查询条件
+    const userWhereClause = { role: 'mechanic' };
+    const profileWhereClause = {};
+    
+    if (search) {
+      userWhereClause.name = {
+        [Op.like]: `%${search}%`
+      };
     }
-  ];
-  
-  // 计算总技师数
-  const total = mechanics.length;
-  
-  logger.info(`管理员查询了技师列表，返回 ${mechanics.length} 条记录`);
-  
-  ctx.body = {
-    status: 'success',
-    data: {
-      mechanics,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / parseInt(limit))
+    
+    if (trade) {
+      profileWhereClause.trade = trade;
+    }
+    
+    // 查询技师列表
+    const { count, rows: users } = await User.findAndCountAll({
+      where: userWhereClause,
+      include: [
+        {
+          model: MechanicProfile,
+          as: 'mechanicProfile',
+          where: profileWhereClause,
+          required: true,
+          include: [
+            {
+              model: WorkOrderMechanic,
+              as: 'workOrderMechanics',
+              attributes: ['order_id'],
+              where: { status: { [Op.in]: ['assigned', 'in_progress'] } },
+              required: false
+            }
+          ]
+        }
+      ],
+      attributes: ['user_id', 'name', 'created_at'],
+      offset: (page - 1) * limit,
+      limit: parseInt(limit),
+      order: [['created_at', 'DESC']]
+    });
+
+    // 处理数据
+    const processedMechanics = users.map(user => ({
+      id: user.user_id,
+      name: user.name,
+      trade: user.mechanicProfile.trade,
+      qualification: user.mechanicProfile.qualification || '技师',
+      hourlyRate: user.mechanicProfile.hourly_rate,
+      hireDate: user.mechanicProfile.hire_date,
+      certNo: user.mechanicProfile.cert_no,
+      currentWorkload: user.mechanicProfile.workOrderMechanics ? user.mechanicProfile.workOrderMechanics.length : 0,
+      joinDate: user.created_at
+    }));
+    
+    logger.info(`管理员查询了技师列表，返回 ${users.length} 条记录`);
+    
+    ctx.body = {
+      status: 'success',
+      data: {
+        mechanics: processedMechanics,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: count,
+          pages: Math.ceil(count / parseInt(limit))
+        }
       }
-    }
-  };
+    };
+  } catch (error) {
+    logger.error('获取技师列表失败:', error);
+    throw createError.internal('获取技师列表失败');
+  }
 };
 
 /**
@@ -188,89 +174,103 @@ const listMechanics = async (ctx) => {
 const getMechanicDetail = async (ctx) => {
   const mechanicId = ctx.params.id;
   
-  // 从数据库获取技师详情
-  // 实际项目中替换为数据库查询
-  const mechanic = {
-    id: mechanicId,
-    name: '李师傅',
-    phone: '13911112222',
-    email: 'lishifu@example.com',
-    specialties: ['发动机维修', '电子系统诊断', '底盘调校'],
-    qualification: '高级汽车维修技师',
-    certification: ['ASE认证', '本田认证技师'],
-    experience: 8,  // 工作年限
-    joinDate: '2020-03-15',
-    avatar: 'https://example.com/avatars/mechanic1.jpg',
-    status: 'active',
-    rating: 4.8,
-    completedOrders: 356,
-    currentOrders: [
-      {
-        id: 'wo1',
-        vehicleInfo: {
-          make: '丰田',
-          model: '卡罗拉',
-          licensePlate: '京A12345'
-        },
-        description: '发动机异响，怠速不稳',
-        status: 'in_progress',
-        createdAt: '2023-05-15T08:30:00Z'
+  try {
+    // 获取技师详细信息
+    const user = await User.findByPk(mechanicId, {
+      where: { role: 'mechanic' },
+      include: [
+        {
+          model: MechanicProfile,
+          as: 'mechanicProfile',
+          required: true
+        }
+      ],
+      attributes: ['user_id', 'name', 'created_at']
+    });
+    
+    if (!user || !user.mechanicProfile) {
+      throw createError.notFound('技师不存在');
+    }
+
+    // 获取当前工单
+    const currentOrders = await WorkOrderMechanic.findAll({
+      where: { 
+        mechanic_id: mechanicId,
+        status: { [Op.in]: ['assigned', 'in_progress'] }
       },
-      {
-        id: 'wo3',
-        vehicleInfo: {
-          make: '大众',
-          model: '帕萨特',
-          licensePlate: '京C54321'
-        },
-        description: '更换变速箱油',
-        status: 'accepted',
-        createdAt: '2023-05-18T10:45:00Z'
+      include: [
+        {
+          model: WorkOrder,
+          as: 'workOrder',
+          attributes: ['order_id', 'description', 'status', 'created_at']
+        }
+      ],
+      order: [['created_at', 'DESC']]
+    });
+
+    // 获取最近完成的工单
+    const recentCompletedOrders = await WorkOrderMechanic.findAll({
+      where: { 
+        mechanic_id: mechanicId,
+        status: 'completed'
+      },
+      include: [
+        {
+          model: WorkOrder,
+          as: 'workOrder',
+          attributes: ['order_id', 'description', 'finished_at']
+        }
+      ],
+      order: [['updated_at', 'DESC']],
+      limit: 5
+    });
+
+    // 计算月收入（基于时薪和工作时间）
+    const monthlyStats = await user.mechanicProfile.getWorkStats();
+    const monthlyIncome = await user.mechanicProfile.calculateSalary();
+
+    const mechanicDetail = {
+      id: user.user_id,
+      name: user.name,
+      trade: user.mechanicProfile.trade,
+      qualification: user.mechanicProfile.qualification || '技师',
+      hourlyRate: user.mechanicProfile.hourly_rate,
+      hireDate: user.mechanicProfile.hire_date,
+      certNo: user.mechanicProfile.cert_no,
+      joinDate: user.created_at,
+      currentOrders: currentOrders.map(om => ({
+        id: om.workOrder.order_id,
+        description: om.workOrder.description,
+        status: om.workOrder.status,
+        createdAt: om.workOrder.created_at
+      })),
+      recentCompletedOrders: recentCompletedOrders.map(om => ({
+        id: om.workOrder.order_id,
+        description: om.workOrder.description,
+        completedAt: om.workOrder.finished_at
+      })),
+      monthlyIncome: {
+        current: monthlyIncome,
+        totalHours: monthlyStats.total_hours || 0,
+        completedOrders: monthlyStats.completed_orders || 0
       }
-    ],
-    recentCompletedOrders: [
-      {
-        id: 'wo2',
-        vehicleInfo: {
-          make: '本田',
-          model: '思域',
-          licensePlate: '京B67890'
-        },
-        description: '更换刹车片，更换机油',
-        status: 'completed',
-        completedAt: '2023-05-10T15:30:00Z',
-        rating: 5
+    };
+    
+    logger.info(`管理员查看了技师 ${mechanicId} 的详细信息`);
+    
+    ctx.body = {
+      status: 'success',
+      data: {
+        mechanic: mechanicDetail
       }
-    ],
-    monthlyIncome: {
-      current: 12800,
-      previous: 11500,
-      percentChange: 11.3
-    },
-    workingHours: {
-      monday: { start: '08:00', end: '17:00' },
-      tuesday: { start: '08:00', end: '17:00' },
-      wednesday: { start: '08:00', end: '17:00' },
-      thursday: { start: '08:00', end: '17:00' },
-      friday: { start: '08:00', end: '17:00' },
-      saturday: { start: '09:00', end: '15:00' },
-      sunday: { start: null, end: null }
+    };
+  } catch (error) {
+    if (error.status) {
+      throw error;
     }
-  };
-  
-  // 检查技师是否存在
-  if (!mechanic) {
-    throw createError.notFound('技师不存在');
+    logger.error(`获取技师详情失败 (ID: ${mechanicId}):`, error);
+    throw createError.internal('获取技师详情失败');
   }
-  
-  logger.info(`管理员查看了技师 ${mechanicId} 的详细信息`);
-  
-  ctx.body = {
-    status: 'success',
-    data: {
-      mechanic
-    }
-  };
 };
 
 /**
@@ -288,40 +288,29 @@ const getMechanicDetail = async (ctx) => {
  *             type: object
  *             required:
  *               - name
- *               - phone
- *               - email
- *               - specialties
- *               - qualification
+ *               - trade
+ *               - hourlyRate
  *             properties:
  *               name:
  *                 type: string
  *                 description: 技师姓名
- *               phone:
+ *               trade:
  *                 type: string
- *                 description: 手机号码
- *               email:
- *                 type: string
- *                 format: email
- *                 description: 电子邮箱
- *               specialties:
- *                 type: array
- *                 items:
- *                   type: string
+ *                 enum: [engine, paint, electric]
  *                 description: 专业领域
+ *               hourlyRate:
+ *                 type: number
+ *                 description: 时薪
  *               qualification:
  *                 type: string
  *                 description: 资质/职称
- *               certification:
- *                 type: array
- *                 items:
- *                   type: string
- *                 description: 认证证书
- *               experience:
- *                 type: integer
- *                 description: 工作年限
- *               workingHours:
- *                 type: object
- *                 description: 工作时间安排
+ *               certNo:
+ *                 type: string
+ *                 description: 认证证书编号
+ *               hireDate:
+ *                 type: string
+ *                 format: date
+ *                 description: 入职日期
  *     responses:
  *       201:
  *         description: 创建成功
@@ -344,78 +333,80 @@ const getMechanicDetail = async (ctx) => {
  *         description: 请求参数错误
  *       401:
  *         description: 未授权
- *       409:
- *         description: 资源冲突（如邮箱或手机号已存在）
  *       500:
  *         description: 服务器错误
  */
 const createMechanic = async (ctx) => {
-  const mechanicData = ctx.request.body;
+  const { name, trade, hourlyRate, qualification, certNo, hireDate } = ctx.request.body;
   
-  // 验证必填字段
-  const requiredFields = ['name', 'phone', 'email', 'specialties', 'qualification'];
-  
-  for (const field of requiredFields) {
-    if (!mechanicData[field]) {
-      throw createError.validation(`缺少必填字段: ${field}`);
+  try {
+    // 验证必填字段
+    const requiredFields = ['name', 'trade', 'hourlyRate'];
+    
+    for (const field of requiredFields) {
+      if (!ctx.request.body[field]) {
+        throw createError.validation(`缺少必填字段: ${field}`);
+      }
     }
-  }
-  
-  // 验证专业领域是否为数组
-  if (!Array.isArray(mechanicData.specialties) || mechanicData.specialties.length === 0) {
-    throw createError.validation('专业领域必须是非空数组');
-  }
-  
-  // 验证邮箱格式
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(mechanicData.email)) {
-    throw createError.validation('邮箱格式不正确');
-  }
-  
-  // 验证手机号格式
-  const phoneRegex = /^1[3-9]\d{9}$/;
-  if (!phoneRegex.test(mechanicData.phone)) {
-    throw createError.validation('手机号格式不正确');
-  }
-  
-  // 检查邮箱是否已存在
-  // 实际项目中替换为数据库查询
-  const emailExists = false;
-  
-  if (emailExists) {
-    throw createError.conflict('该邮箱已被注册');
-  }
-  
-  // 检查手机号是否已存在
-  // 实际项目中替换为数据库查询
-  const phoneExists = false;
-  
-  if (phoneExists) {
-    throw createError.conflict('该手机号已被注册');
-  }
-  
-  // 创建技师账号（在数据库中）
-  // 实际项目中替换为数据库操作
-  const newMechanic = {
-    id: 'mech' + Date.now(),
-    ...mechanicData,
-    status: 'active',
-    joinDate: new Date().toISOString(),
-    completedOrders: 0,
-    rating: 0,
-    createdAt: new Date().toISOString()
-  };
-  
-  logger.info(`管理员创建了新技师: ${newMechanic.name}`);
-  
-  ctx.status = 201;
-  ctx.body = {
-    status: 'success',
-    message: '技师创建成功',
-    data: {
-      mechanic: newMechanic
+    
+    // 验证专业领域
+    if (!['engine', 'paint', 'electric'].includes(trade)) {
+      throw createError.validation('无效的专业领域');
     }
-  };
+    
+    // 验证时薪
+    if (isNaN(hourlyRate) || hourlyRate <= 0) {
+      throw createError.validation('时薪必须是大于0的数字');
+    }
+    
+    // 使用事务创建用户和技师档案
+    const result = await User.sequelize.transaction(async (t) => {
+      // 创建用户
+      const user = await User.create({
+        name,
+        role: 'mechanic',
+        password_hash: null // 技师账号不需要密码，由管理员管理
+      }, { transaction: t });
+      
+      // 创建技师档案
+      const mechanicProfile = await MechanicProfile.create({
+        mechanic_id: user.user_id,
+        trade,
+        hourly_rate: hourlyRate,
+        qualification,
+        cert_no: certNo,
+        hire_date: hireDate || new Date()
+      }, { transaction: t });
+      
+      return { user, mechanicProfile };
+    });
+    
+    logger.info(`管理员创建了新技师: ${name} (ID: ${result.user.user_id})`);
+    
+    ctx.status = 201;
+    ctx.body = {
+      status: 'success',
+      message: '技师创建成功',
+      data: {
+        mechanic: {
+          id: result.user.user_id,
+          name: result.user.name,
+          trade: result.mechanicProfile.trade,
+          hourlyRate: result.mechanicProfile.hourly_rate,
+          qualification: result.mechanicProfile.qualification,
+          certNo: result.mechanicProfile.cert_no,
+          hireDate: result.mechanicProfile.hire_date,
+          createdAt: result.user.created_at
+        }
+      }
+    };
+  } catch (error) {
+    if (error.status) {
+      throw error;
+    }
+    logger.error('创建技师失败:', error);
+    throw createError.internal('创建技师失败');
+  }
 };
 
 /**
@@ -442,33 +433,19 @@ const createMechanic = async (ctx) => {
  *               name:
  *                 type: string
  *                 description: 技师姓名
- *               phone:
+ *               trade:
  *                 type: string
- *                 description: 手机号码
- *               email:
- *                 type: string
- *                 format: email
- *                 description: 电子邮箱
- *               specialties:
- *                 type: array
- *                 items:
- *                   type: string
+ *                 enum: [engine, paint, electric]
  *                 description: 专业领域
+ *               hourlyRate:
+ *                 type: number
+ *                 description: 时薪
  *               qualification:
  *                 type: string
  *                 description: 资质/职称
- *               certification:
- *                 type: array
- *                 items:
- *                   type: string
- *                 description: 认证证书
- *               status:
+ *               certNo:
  *                 type: string
- *                 enum: [active, inactive, suspended]
- *                 description: 技师状态
- *               workingHours:
- *                 type: object
- *                 description: 工作时间安排
+ *                 description: 认证证书编号
  *     responses:
  *       200:
  *         description: 更新成功
@@ -497,8 +474,6 @@ const createMechanic = async (ctx) => {
  *         description: 未授权
  *       404:
  *         description: 技师不存在
- *       409:
- *         description: 资源冲突（如邮箱或手机号已被其他用户使用）
  *       500:
  *         description: 服务器错误
  */
@@ -506,71 +481,83 @@ const updateMechanic = async (ctx) => {
   const mechanicId = ctx.params.id;
   const updateData = ctx.request.body;
   
-  // 获取技师信息（从数据库）
-  // 实际项目中替换为数据库查询
-  const mechanic = {
-    id: mechanicId,
-    name: '李师傅',
-    status: 'active'
-  };
-  
-  // 检查技师是否存在
-  if (!mechanic) {
-    throw createError.notFound('技师不存在');
-  }
-  
-  // 验证更新数据
-  const allowedFields = ['name', 'phone', 'email', 'specialties', 'qualification', 'certification', 'status', 'workingHours'];
-  const updates = {};
-  
-  Object.keys(updateData).forEach(key => {
-    if (allowedFields.includes(key)) {
-      updates[key] = updateData[key];
-    }
-  });
-  
-  if (Object.keys(updates).length === 0) {
-    throw createError.validation('没有提供有效的更新字段');
-  }
-  
-  // 特殊字段验证
-  if (updates.status && !['active', 'inactive', 'suspended'].includes(updates.status)) {
-    throw createError.validation('无效的状态值');
-  }
-  
-  if (updates.email) {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(updates.email)) {
-      throw createError.validation('邮箱格式不正确');
+  try {
+    // 获取技师信息
+    const user = await User.findByPk(mechanicId, {
+      where: { role: 'mechanic' },
+      include: [
+        {
+          model: MechanicProfile,
+          as: 'mechanicProfile',
+          required: true
+        }
+      ]
+    });
+    
+    if (!user || !user.mechanicProfile) {
+      throw createError.notFound('技师不存在');
     }
     
-    // 检查邮箱是否已被其他用户使用
-    // 实际项目中替换为数据库查询
-  }
-  
-  if (updates.phone) {
-    const phoneRegex = /^1[3-9]\d{9}$/;
-    if (!phoneRegex.test(updates.phone)) {
-      throw createError.validation('手机号格式不正确');
+    // 验证更新数据
+    const allowedFields = ['name', 'trade', 'hourlyRate', 'qualification', 'certNo'];
+    const userUpdates = {};
+    const profileUpdates = {};
+    
+    Object.keys(updateData).forEach(key => {
+      if (allowedFields.includes(key)) {
+        if (key === 'name') {
+          userUpdates[key] = updateData[key];
+        } else if (key === 'hourlyRate') {
+          profileUpdates.hourly_rate = updateData[key];
+        } else if (key === 'certNo') {
+          profileUpdates.cert_no = updateData[key];
+        } else {
+          profileUpdates[key] = updateData[key];
+        }
+      }
+    });
+    
+    if (Object.keys(userUpdates).length === 0 && Object.keys(profileUpdates).length === 0) {
+      throw createError.validation('没有提供有效的更新字段');
     }
     
-    // 检查手机号是否已被其他用户使用
-    // 实际项目中替换为数据库查询
-  }
-  
-  // 更新技师信息（在数据库中）
-  // 实际项目中替换为数据库更新操作
-  
-  logger.info(`管理员更新了技师 ${mechanicId} 的信息`);
-  
-  ctx.body = {
-    status: 'success',
-    message: '技师信息已更新',
-    data: {
-      mechanicId,
-      updatedFields: Object.keys(updates)
+    // 特殊字段验证
+    if (profileUpdates.trade && !['engine', 'paint', 'electric'].includes(profileUpdates.trade)) {
+      throw createError.validation('无效的专业领域');
     }
-  };
+    
+    if (profileUpdates.hourly_rate && (isNaN(profileUpdates.hourly_rate) || profileUpdates.hourly_rate <= 0)) {
+      throw createError.validation('时薪必须是大于0的数字');
+    }
+    
+    // 使用事务更新信息
+    await User.sequelize.transaction(async (t) => {
+      if (Object.keys(userUpdates).length > 0) {
+        await user.update(userUpdates, { transaction: t });
+      }
+      
+      if (Object.keys(profileUpdates).length > 0) {
+        await user.mechanicProfile.update(profileUpdates, { transaction: t });
+      }
+    });
+    
+    logger.info(`管理员更新了技师 ${mechanicId} 的信息`);
+    
+    ctx.body = {
+      status: 'success',
+      message: '技师信息已更新',
+      data: {
+        mechanicId,
+        updatedFields: Object.keys({...userUpdates, ...profileUpdates})
+      }
+    };
+  } catch (error) {
+    if (error.status) {
+      throw error;
+    }
+    logger.error(`更新技师信息失败 (ID: ${mechanicId}):`, error);
+    throw createError.internal('更新技师信息失败');
+  }
 };
 
 /**
@@ -612,35 +599,54 @@ const updateMechanic = async (ctx) => {
 const deleteMechanic = async (ctx) => {
   const mechanicId = ctx.params.id;
   
-  // 获取技师信息（从数据库）
-  // 实际项目中替换为数据库查询
-  const mechanic = {
-    id: mechanicId,
-    name: '李师傅',
-    status: 'active',
-    currentOrders: []
-  };
-  
-  // 检查技师是否存在
-  if (!mechanic) {
-    throw createError.notFound('技师不存在');
+  try {
+    // 获取技师信息
+    const user = await User.findByPk(mechanicId, {
+      where: { role: 'mechanic' },
+      include: [
+        {
+          model: MechanicProfile,
+          as: 'mechanicProfile',
+          required: true
+        }
+      ]
+    });
+    
+    if (!user || !user.mechanicProfile) {
+      throw createError.notFound('技师不存在');
+    }
+    
+    // 检查技师是否有进行中的工单
+    const activeOrders = await WorkOrderMechanic.count({
+      where: { 
+        mechanic_id: mechanicId,
+        status: { [Op.in]: ['assigned', 'in_progress'] }
+      }
+    });
+    
+    if (activeOrders > 0) {
+      throw createError.conflict('该技师有未完成的工单，无法删除');
+    }
+    
+    // 使用事务删除技师档案和用户
+    await User.sequelize.transaction(async (t) => {
+      await user.mechanicProfile.destroy({ transaction: t });
+      await user.destroy({ transaction: t });
+    });
+    
+    logger.info(`管理员删除了技师 ${mechanicId}`);
+    
+    ctx.body = {
+      status: 'success',
+      message: '技师已删除'
+    };
+  } catch (error) {
+    if (error.status) {
+      throw error;
+    }
+    logger.error(`删除技师失败 (ID: ${mechanicId}):`, error);
+    throw createError.internal('删除技师失败');
   }
-  
-  // 检查技师是否有进行中的工单
-  if (mechanic.currentOrders && mechanic.currentOrders.length > 0) {
-    throw createError.conflict('该技师有未完成的工单，无法删除');
-  }
-  
-  // 删除技师（在数据库中）
-  // 实际项目中替换为数据库删除操作
-  // 注意：实际应用中可能使用软删除（更新状态）而不是硬删除
-  
-  logger.info(`管理员删除了技师 ${mechanicId}`);
-  
-  ctx.body = {
-    status: 'success',
-    message: '技师已删除'
-  };
 };
 
 module.exports = {

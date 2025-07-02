@@ -47,7 +47,11 @@
  *         description: 服务器错误
  */
 const { verifyToken, generateToken } = require('../../utils/jwt');
+const { User, MechanicProfile } = require('../../models');
 const { createError } = require('../../middleware/errorhandler');
+const { createLogger } = require('../../middleware/logger');
+
+const logger = createLogger('Auth');
 
 /**
  * 刷新令牌控制器
@@ -57,6 +61,7 @@ const { createError } = require('../../middleware/errorhandler');
  * @param {Object} ctx - Koa上下文
  */
 const refresh = async (ctx) => {
+  try {
   const { refreshToken } = ctx.request.body;
   
   if (!refreshToken) {
@@ -76,15 +81,19 @@ const refresh = async (ctx) => {
     throw createError.authentication('提供的不是刷新令牌');
   }
   
-  // 获取用户信息
-  // 注意：这里需要连接到实际的数据库
-  // 以下是模拟代码，实际项目中应替换为数据库操作
-  const user = { 
-    id: decoded.id,
-    username: 'testuser',
-    email: 'test@example.com',
-    role: 'user'
-  };
+    // 从数据库获取用户信息
+    const user = await User.findOne({
+      where: { user_id: decoded.id },
+      attributes: ['user_id', 'name', 'role'],
+      include: [
+        {
+          model: MechanicProfile,
+          as: 'mechanicProfile',
+          attributes: ['mechanic_id', 'trade', 'hourly_rate'],
+          required: false
+        }
+      ]
+    });
   
   if (!user) {
     throw createError.notFound('用户不存在');
@@ -92,13 +101,24 @@ const refresh = async (ctx) => {
   
   // 生成新的访问令牌
   const payload = {
-    id: user.id,
-    username: user.username,
-    email: user.email,
+      id: user.user_id,
+      username: user.name,
+      name: user.name,
     role: user.role
   };
+    
+    // 如果是技师，添加技师档案信息
+    if (user.role === 'mechanic' && user.mechanicProfile) {
+      payload.mechanicProfile = {
+        mechanic_id: user.mechanicProfile.mechanic_id,
+        trade: user.mechanicProfile.trade,
+        hourly_rate: user.mechanicProfile.hourly_rate
+      };
+    }
   
   const accessToken = generateToken(payload, 'access');
+    
+    logger.info(`用户刷新令牌成功: ${user.name} (${user.role})`);
   
   // 返回成功响应和新令牌
   ctx.status = 200;
@@ -109,6 +129,17 @@ const refresh = async (ctx) => {
       accessToken
     }
   };
+  } catch (error) {
+    logger.error(`令牌刷新失败: ${error.message}`);
+    
+    // 如果是自定义错误，直接抛出
+    if (error.isCustomError) {
+      throw error;
+    }
+    
+    // 其他错误
+    throw createError.internal('令牌刷新过程中发生错误');
+  }
 };
 
 module.exports = {

@@ -27,140 +27,147 @@
  *     User:
  *       type: object
  *       properties:
- *         id:
- *           type: string
+ *         user_id:
+ *           type: integer
  *           description: 用户唯一标识符
- *         username:
+ *         name:
  *           type: string
- *           description: 用户名
- *         email:
- *           type: string
- *           format: email
- *           description: 电子邮箱
- *         fullName:
- *           type: string
- *           description: 全名
- *         phone:
- *           type: string
- *           description: 电话号码
+ *           description: 用户姓名
  *         role:
  *           type: string
  *           enum: [customer, mechanic, admin]
  *           description: 用户角色
- *         status:
- *           type: string
- *           enum: [active, inactive, suspended]
- *           description: 账号状态
- *         createdAt:
+ *         created_at:
  *           type: string
  *           format: date-time
  *           description: 账号创建时间
- *     UserDetail:
- *       allOf:
- *         - $ref: '#/components/schemas/User'
- *         - type: object
- *           properties:
- *             address:
- *               type: string
- *               description: 用户地址
- *             lastLogin:
- *               type: string
- *               format: date-time
- *               description: 最后登录时间
- *             vehicles:
- *               type: array
- *               description: 用户的车辆
- *               items:
- *                 $ref: '#/components/schemas/Vehicle'
- *             recentOrders:
- *               type: array
- *               description: 近期工单
- *               items:
- *                 $ref: '#/components/schemas/WorkOrderSummary'
- *     Pagination:
- *       type: object
- *       properties:
- *         page:
- *           type: integer
- *           description: 当前页码
- *         limit:
- *           type: integer
- *           description: 每页数量
- *         total:
- *           type: integer
- *           description: 总记录数
- *         pages:
- *           type: integer
- *           description: 总页数
  */
 
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
 const bcrypt = require('bcrypt');
-const { Schema } = mongoose;
 
-const userSchema = new Schema({
-  username: {
-    type: String,
-    required: true,
-    unique: true,
-    trim: true
-  },
-  password: {
-    type: String,
-    required: true
-  },
-  email: {
-    type: String,
-    required: true,
-    unique: true,
-    trim: true,
-    lowercase: true
-  },
-  fullName: {
-    type: String,
-    required: true
-  },
-  phone: {
-    type: String
-  },
-  address: {
-    type: String
-  },
-  role: {
-    type: String,
-    enum: ['customer', 'mechanic', 'admin'],
-    default: 'customer'
-  },
-  status: {
-    type: String,
-    enum: ['active', 'inactive', 'suspended'],
-    default: 'active'
-  },
-  avatar: {
-    type: String
-  },
-  lastLogin: {
-    type: Date
-  }
-}, { timestamps: true });
+module.exports = (sequelize) => {
+  const User = sequelize.define('User', {
+    user_id: {
+      type: DataTypes.BIGINT,
+      primaryKey: true,
+      autoIncrement: true,
+      field: 'user_id'
+    },
+    role: {
+      type: DataTypes.ENUM('customer', 'mechanic', 'admin'),
+      allowNull: false,
+      field: 'role'
+    },
+    name: {
+      type: DataTypes.STRING(60),
+      allowNull: false,
+      field: 'name'
+    },
+    password_hash: {
+      type: DataTypes.CHAR(60),
+      field: 'password_hash'
+    },
+    created_at: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      field: 'created_at'
+    }
+  }, {
+    tableName: 'users',
+    timestamps: false, // 使用自定义的created_at字段
+    indexes: [
+      {
+        fields: ['role']
+      }
+    ]
+  });
 
-// 添加密码哈希中间件
-userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  
-  try {
+  // 实例方法：验证密码
+  User.prototype.comparePassword = async function(candidatePassword) {
+    if (!this.password_hash) return false;
+    return bcrypt.compare(candidatePassword, this.password_hash);
+  };
+
+  // 实例方法：设置密码
+  User.prototype.setPassword = async function(password) {
     const salt = await bcrypt.genSalt(10);
-    this.password = await bcrypt.hash(this.password, salt);
-    next();
-  } catch (error) {
-    next(error);
-  }
-});
+    this.password_hash = await bcrypt.hash(password, salt);
+  };
 
-// 添加密码验证方法
-userSchema.methods.comparePassword = async function(candidatePassword) {
-  return bcrypt.compare(candidatePassword, this.password);
-};
+  // 类方法：根据用户名查找用户
+  User.findByUsername = async function(username) {
+    return await User.findOne({
+      where: { name: username }
+    });
+  };
 
-// 创建和导出模型
-module.exports = mongoose.model('User', userSchema); 
+  // 类方法：创建新用户（带密码加密）
+  User.createUser = async function(userData) {
+    const { role, name, password } = userData;
+    
+    // 验证必需字段
+    if (!role || !name || !password) {
+      throw new Error('缺少必需字段：role, name, password');
+    }
+    
+    // 验证角色
+    const validRoles = ['customer', 'mechanic', 'admin'];
+    if (!validRoles.includes(role)) {
+      throw new Error(`无效的用户角色：${role}。有效角色：${validRoles.join(', ')}`);
+    }
+    
+    // 检查用户名是否已存在
+    const existingUser = await User.findOne({
+      where: { name }
+    });
+    
+    if (existingUser) {
+      throw new Error(`用户名 "${name}" 已存在`);
+    }
+    
+    // 加密密码
+    const salt = await bcrypt.genSalt(10);
+    const password_hash = await bcrypt.hash(password, salt);
+    
+    // 创建用户
+    const user = await User.create({
+      role,
+      name,
+      password_hash,
+      created_at: new Date()
+    });
+    
+    return user;
+  };
+
+  // 定义关联关系
+  User.associate = function(models) {
+    // 用户拥有多辆车辆（customer角色）
+    User.hasMany(models.Vehicle, {
+      foreignKey: 'user_id',
+      as: 'vehicles'
+    });
+
+    // 用户有一个技师档案（mechanic角色）
+    User.hasOne(models.MechanicProfile, {
+      foreignKey: 'mechanic_id',
+      sourceKey: 'user_id',
+      as: 'mechanicProfile'
+    });
+
+    // 用户创建的工单（customer角色）
+    User.hasMany(models.WorkOrder, {
+      foreignKey: 'customer_id',
+      as: 'customerOrders'
+    });
+
+    // 用户提交的反馈
+    User.hasMany(models.Feedback, {
+      foreignKey: 'user_id', 
+      as: 'feedbacks'
+    });
+  };
+
+  return User;
+}; 

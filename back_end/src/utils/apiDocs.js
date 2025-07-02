@@ -14,7 +14,7 @@ const options = {
       description: '车辆维修管理系统的RESTful API文档',
       contact: {
         name: 'API Support',
-        email: 'support@example.com'
+        url: 'http://www.example.com/support'
       }
     },
     servers: [

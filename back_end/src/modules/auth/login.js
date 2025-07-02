@@ -17,7 +17,7 @@
  *             properties:
  *               username:
  *                 type: string
- *                 description: 用户名或电子邮箱
+ *                 description: 用户名
  *               password:
  *                 type: string
  *                 format: password
@@ -62,8 +62,8 @@
 
 const { validateLogin } = require('../../utils/validator');
 const { generateToken } = require('../../utils/jwt');
+const { User, MechanicProfile } = require('../../models');
 const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
 const { createError } = require('../../middleware/errorhandler');
 const { createLogger } = require('../../middleware/logger');
 
@@ -78,10 +78,10 @@ const logger = createLogger('Auth');
  */
 const login = async (ctx) => {
   try {
-    const { username, email, password } = ctx.request.body;
+    const { username, password } = ctx.request.body;
     
     // 验证用户输入
-    const { isValid, errors } = validateLogin({ username, email, password });
+    const { isValid, errors } = validateLogin({ username, password });
     
     if (!isValid) {
       ctx.status = 400;
@@ -93,18 +93,22 @@ const login = async (ctx) => {
       return;
     }
     
-    // 查找用户
-    // 注意：这里需要连接到实际的数据库
-    // 以下是模拟代码，实际项目中应替换为数据库操作
-    const user = { 
-      id: 'user_1',
-      username: 'testuser',
-      email: 'test@example.com',
-      password: '$2b$10$XAI.GDJpDOQz4kkVB6HuaeQH0CKaVIKpL7znOQIbVINvVrAr0n5Iq', // 加密的 'password123'
-      role: 'user'
-    };
+    // 从数据库查找用户
+    const user = await User.findOne({
+      where: { name: username },
+      attributes: ['user_id', 'name', 'password_hash', 'role', 'created_at'],
+      include: [
+        {
+          model: MechanicProfile,
+          as: 'mechanicProfile',
+          attributes: ['mechanic_id', 'trade', 'hourly_rate'],
+          required: false
+        }
+      ]
+    });
     
     if (!user) {
+      logger.warn(`登录失败: 用户名不存在 - ${username}`);
       ctx.status = 401;
       ctx.body = {
         status: 'error',
@@ -114,9 +118,10 @@ const login = async (ctx) => {
     }
     
     // 验证密码
-    const isPasswordValid = await bcrypt.compare(password, user.password);
+    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
     
     if (!isPasswordValid) {
+      logger.warn(`登录失败: 密码错误 - ${username}`);
       ctx.status = 401;
       ctx.body = {
         status: 'error',
@@ -127,14 +132,26 @@ const login = async (ctx) => {
     
     // 生成访问令牌和刷新令牌
     const payload = {
-      id: user.id,
-      username: user.username,
-      email: user.email,
-      role: user.role
+      id: user.user_id,
+      username: user.name,
+      role: user.role,
+      status: 'active',  // 添加默认状态
+      fullName: user.name  // 添加全名
     };
     
+    // 如果是技师，添加技师档案信息
+    if (user.role === 'mechanic' && user.mechanicProfile) {
+      payload.mechanicProfile = {
+        mechanic_id: user.mechanicProfile.mechanic_id,
+        trade: user.mechanicProfile.trade,
+        hourly_rate: user.mechanicProfile.hourly_rate
+      };
+    }
+    
     const accessToken = generateToken(payload, 'access');
-    const refreshToken = generateToken({ id: user.id }, 'refresh');
+    const refreshToken = generateToken({ id: user.user_id }, 'refresh');
+    
+    logger.info(`用户登录成功: ${username} (${user.role})`);
     
     // 返回成功响应和令牌
     ctx.status = 200;
@@ -143,10 +160,11 @@ const login = async (ctx) => {
       message: '登录成功',
       data: {
         user: {
-          id: user.id,
-          username: user.username,
-          email: user.email,
-          role: user.role
+          id: user.user_id,
+          username: user.name,
+          name: user.name,
+          role: user.role,
+          mechanicProfile: user.mechanicProfile || null
         },
         tokens: {
           accessToken,
@@ -155,7 +173,7 @@ const login = async (ctx) => {
       }
     };
   } catch (error) {
-    logger.error(`用户 ${username} 登录失败: ${error.message}`);
+    logger.error(`登录过程中发生错误: ${error.message}`);
     ctx.status = 500;
     ctx.body = {
       status: 'error',
@@ -164,51 +182,6 @@ const login = async (ctx) => {
     };
   }
 };
-
-/**
- * 模拟用户认证
- * 在真实环境中，应该从数据库中查询用户并验证密码
- * 
- * @param {string} username - 用户名
- * @param {string} password - 密码
- * @returns {Object|null} 用户对象或null
- */
-function mockAuthenticateUser(username, password) {
-  // 模拟用户数据
-  const users = [
-    {
-      id: 'user1',
-      username: 'admin',
-      password: 'admin123',
-      role: 'admin',
-      status: 'active'
-    },
-    {
-      id: 'user2',
-      username: 'mechanic',
-      password: 'mechanic123',
-      role: 'mechanic',
-      status: 'active'
-    },
-    {
-      id: 'user3',
-      username: 'customer',
-      password: 'customer123',
-      role: 'customer',
-      status: 'active'
-    },
-    {
-      id: 'user4',
-      username: 'inactive',
-      password: 'inactive123',
-      role: 'customer',
-      status: 'inactive'
-    }
-  ];
-  
-  const user = users.find(u => u.username === username && u.password === password);
-  return user || null;
-}
 
 module.exports = {
   login

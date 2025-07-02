@@ -12,8 +12,8 @@ const router = require('./routes');
 // 导入所有中间件
 const { errorHandler, notFoundHandler } = require('./middleware/errorhandler');
 const { loggerMiddleware } = require('./middleware/logger');
-const { authMiddleware, optionalAuth } = require('./middleware/auth');
-const { checkVehicleRepairAccess } = require('./middleware/rbac');
+// const { authMiddleware, optionalAuth } = require('./middleware/auth'); // 移除optionalAuth，因为所有需要认证的路由都有authMiddleware
+// const { checkVehicleRepairAccess } = require('./middleware/rbac'); // 移除冗余的全局访问控制
 const { createStaticMiddleware } = require('./modules/system/static');
 
 // 创建 Koa 实例
@@ -22,11 +22,11 @@ const app = new Koa();
 // 中间件注册顺序（洋葱模型，由外到内）
 // 注意：顺序很重要，错误处理必须在最外层，认证在业务逻辑之前
 
-// 1. 日志中间件 - 应该是第一个，记录所有请求
-app.use(loggerMiddleware);
-
-// 2. 全局错误处理中间件 - 捕获所有后续中间件中的错误
+// 1. 全局错误处理中间件 - 必须在最外层，捕获所有后续中间件中的错误
 app.use(errorHandler);
+
+// 2. 日志中间件 - 记录所有请求
+app.use(loggerMiddleware);
 
 // 3. 基础中间件
 app.use(cors({
@@ -51,14 +51,14 @@ app.use(createStaticMiddleware({
   allowedExtensions: ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.css', '.js', '.html', '.pdf', '.ico', '.woff', '.woff2', '.ttf']
 }));
 
-// 5. 认证中间件 - 可选认证，允许公共路径通过
-// 注意：这里使用optionalAuth，因为某些路径（如登录、注册）不需要认证
-// 具体的认证要求在访问控制中间件和各个路由中处理
-app.use(optionalAuth);
+// 5. 认证中间件 - 移除optionalAuth，因为：
+// - 所有需要用户信息的路由都有authMiddleware
+// - 中间件都有安全的ctx.state.user检查
+// - 公共路径不依赖用户信息
+// app.use(optionalAuth);
 
-// 6. 车辆维修系统专用访问控制中间件
-// 该中间件会根据用户角色和请求路径进行精确的权限控制
-app.use(checkVehicleRepairAccess);
+// 6. 车辆维修系统专用访问控制中间件 - 移除，因为路由级别已有完整的权限检查
+// app.use(checkVehicleRepairAccess);
 
 // 7. 注册路由
 app.use(router.routes());

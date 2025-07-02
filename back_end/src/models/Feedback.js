@@ -21,112 +21,253 @@
  * - 一个用户可以提交多个反馈
  */
 
-class Feedback {
-  constructor(db) {
-    this.db = db;
-    this.tableName = 'feedbacks';
-  }
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     Feedback:
+ *       type: object
+ *       properties:
+ *         feedback_id:
+ *           type: integer
+ *           description: 反馈唯一标识符
+ *         order_id:
+ *           type: integer
+ *           description: 工单ID
+ *         user_id:
+ *           type: integer
+ *           description: 用户ID
+ *         type:
+ *           type: string
+ *           enum: [rating, urge]
+ *           description: 反馈类型
+ *         rating:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 5
+ *           description: 评分（1-5星）
+ *         comment:
+ *           type: string
+ *           description: 评价内容
+ *         created_at:
+ *           type: string
+ *           format: date-time
+ *           description: 创建时间
+ */
 
-  // 创建反馈表
-  async createTable() {
-    const sql = `
-      CREATE TABLE IF NOT EXISTS ${this.tableName} (
-        feedback_id BIGINT PRIMARY KEY AUTO_INCREMENT,
-        order_id BIGINT NOT NULL,
-        user_id BIGINT NOT NULL,
-        type ENUM('rating','urge') NOT NULL,
-        rating INT CHECK (rating >= 1 AND rating <= 5),
-        comment TEXT,
-        is_anonymous BOOLEAN DEFAULT FALSE,
-        status ENUM('pending','reviewed','resolved') DEFAULT 'pending',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        FOREIGN KEY (order_id) REFERENCES work_orders(order_id),
-        FOREIGN KEY (user_id) REFERENCES users(user_id),
-        INDEX idx_order_id (order_id),
-        INDEX idx_user_id (user_id),
-        INDEX idx_type (type),
-        INDEX idx_rating (rating),
-        INDEX idx_created_at (created_at)
-      )`;
-    // 执行SQL创建表
-  }
+const { DataTypes } = require('sequelize');
 
-  // 提交评分反馈
-  async submitRating(orderId, userId, rating, comment, isAnonymous = false) {
-    // 创建评分反馈
-    // 验证评分范围（1-5）
-    // 检查用户是否有权限评价该工单
-  }
+module.exports = (sequelize) => {
+  const Feedback = sequelize.define('Feedback', {
+    feedback_id: {
+      type: DataTypes.BIGINT,
+      primaryKey: true,
+      autoIncrement: true,
+      field: 'feedback_id'
+    },
+    order_id: {
+      type: DataTypes.BIGINT,
+      allowNull: false,
+      field: 'order_id',
+      references: {
+        model: 'work_orders',
+        key: 'order_id'
+      }
+    },
+    user_id: {
+      type: DataTypes.BIGINT,
+      allowNull: false,
+      field: 'user_id',
+      references: {
+        model: 'users',
+        key: 'user_id'
+      }
+    },
+    type: {
+      type: DataTypes.ENUM('rating', 'urge'),
+      allowNull: false,
+      field: 'type'
+    },
+    rating: {
+      type: DataTypes.INTEGER,
+      field: 'rating',
+      validate: {
+        min: 1,
+        max: 5
+      }
+    },
+    comment: {
+      type: DataTypes.TEXT,
+      field: 'comment'
+    },
+    created_at: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      field: 'created_at'
+    }
+  }, {
+    tableName: 'feedbacks',
+    timestamps: false,
+    indexes: [
+      {
+        fields: ['order_id']
+      },
+      {
+        fields: ['user_id']
+      },
+      {
+        fields: ['type']
+      },
+      {
+        fields: ['rating']
+      },
+      {
+        fields: ['created_at']
+      }
+    ]
+  });
 
-  // 提交催单反馈
-  async submitUrge(orderId, userId, comment) {
-    // 创建催单反馈
-    // 通知相关技师和管理员
-  }
+  // 类方法：提交评分反馈
+  Feedback.submitRating = async function(orderId, userId, rating, comment, isAnonymous = false) {
+    // 验证评分范围
+    if (rating < 1 || rating > 5) {
+      throw new Error('评分必须在1-5之间');
+    }
 
-  // 获取工单的所有反馈
-  async getOrderFeedbacks(orderId) {
-    // 返回工单的所有反馈记录
-  }
+    return await Feedback.create({
+      order_id: orderId,
+      user_id: userId,
+      type: 'rating',
+      rating: rating,
+      comment: comment
+    });
+  };
 
-  // 获取用户的反馈历史
-  async getUserFeedbacks(userId) {
-    // 返回用户提交的所有反馈
-  }
+  // 类方法：提交催单反馈
+  Feedback.submitUrge = async function(orderId, userId, comment) {
+    return await Feedback.create({
+      order_id: orderId,
+      user_id: userId,
+      type: 'urge',
+      comment: comment
+    });
+  };
 
-  // 获取评分统计
-  async getRatingStats(dateRange) {
-    // 返回评分分布统计
-    // 平均评分、各星级数量等
-  }
+  // 类方法：获取工单的所有反馈
+  Feedback.getOrderFeedbacks = async function(orderId) {
+    return await Feedback.findAll({
+      where: { order_id: orderId },
+      include: [{
+        model: sequelize.models.User,
+        as: 'user',
+        attributes: ['name']
+      }],
+      order: [['created_at', 'DESC']]
+    });
+  };
 
-  // 获取技师的评分
-  async getMechanicRatings(mechanicId, dateRange) {
-    // 返回技师参与工单的评分情况
-  }
+  // 类方法：获取用户的反馈历史
+  Feedback.getUserFeedbacks = async function(userId) {
+    return await Feedback.findAll({
+      where: { user_id: userId },
+      include: [{
+        model: sequelize.models.WorkOrder,
+        as: 'workOrder',
+        attributes: ['order_id', 'description'],
+        include: [{
+          model: sequelize.models.Vehicle,
+          as: 'vehicle',
+          attributes: ['plate_no', 'model']
+        }]
+      }],
+      order: [['created_at', 'DESC']]
+    });
+  };
 
-  // 管理员回复反馈
-  async adminReply(feedbackId, adminId, reply) {
-    // 管理员回复客户反馈
-    // 更新状态为已回复
-  }
+  // 类方法：获取评分统计
+  Feedback.getRatingStats = async function(startDate, endDate) {
+    const whereClause = { type: 'rating' };
+    
+    if (startDate && endDate) {
+      whereClause.created_at = {
+        [sequelize.Sequelize.Op.between]: [startDate, endDate]
+      };
+    }
 
-  // 标记反馈为已解决
-  async markAsResolved(feedbackId) {
-    // 更新反馈状态为已解决
-  }
+    return await Feedback.findAll({
+      where: whereClause,
+      attributes: [
+        [sequelize.fn('COUNT', sequelize.col('feedback_id')), 'total_ratings'],
+        [sequelize.fn('AVG', sequelize.col('rating')), 'average_rating'],
+        [sequelize.fn('COUNT', sequelize.literal("CASE WHEN rating = 5 THEN 1 END")), 'five_star'],
+        [sequelize.fn('COUNT', sequelize.literal("CASE WHEN rating = 4 THEN 1 END")), 'four_star'],
+        [sequelize.fn('COUNT', sequelize.literal("CASE WHEN rating = 3 THEN 1 END")), 'three_star'],
+        [sequelize.fn('COUNT', sequelize.literal("CASE WHEN rating = 2 THEN 1 END")), 'two_star'],
+        [sequelize.fn('COUNT', sequelize.literal("CASE WHEN rating = 1 THEN 1 END")), 'one_star']
+      ],
+      raw: true
+    });
+  };
 
-  // 获取待处理的反馈
-  async getPendingFeedbacks() {
-    // 返回所有待处理的反馈
-  }
+  // 类方法：获取催单列表
+  Feedback.getUrgeList = async function() {
+    return await Feedback.findAll({
+      where: { type: 'urge' },
+      include: [
+        {
+          model: sequelize.models.WorkOrder,
+          as: 'workOrder',
+          attributes: ['order_id', 'description', 'status'],
+          include: [{
+            model: sequelize.models.Vehicle,
+            as: 'vehicle',
+            attributes: ['plate_no', 'model']
+          }]
+        },
+        {
+          model: sequelize.models.User,
+          as: 'user',
+          attributes: ['name']
+        }
+      ],
+      order: [['created_at', 'DESC']]
+    });
+  };
 
-  // 获取催单列表
-  async getUrgeList() {
-    // 返回所有催单反馈
-  }
+  // 类方法：获取最新反馈
+  Feedback.getRecentFeedbacks = async function(limit = 10) {
+    return await Feedback.findAll({
+      include: [
+        {
+          model: sequelize.models.WorkOrder,
+          as: 'workOrder',
+          attributes: ['order_id', 'description']
+        },
+        {
+          model: sequelize.models.User,
+          as: 'user',
+          attributes: ['name']
+        }
+      ],
+      order: [['created_at', 'DESC']],
+      limit: limit
+    });
+  };
 
-  // 删除反馈
-  async deleteFeedback(feedbackId, userId) {
-    // 软删除反馈（只有反馈人可以删除）
-  }
+  // 定义关联关系
+  Feedback.associate = function(models) {
+    // 反馈属于一个工单
+    Feedback.belongsTo(models.WorkOrder, {
+      foreignKey: 'order_id',
+      as: 'workOrder'
+    });
 
-  // 获取服务质量报告
-  async getServiceQualityReport(dateRange) {
-    // 返回服务质量分析报告
-    // 包括平均评分、满意度趋势等
-  }
+    // 反馈属于一个用户
+    Feedback.belongsTo(models.User, {
+      foreignKey: 'user_id',
+      as: 'user'
+    });
+  };
 
-  // 获取最新反馈
-  async getRecentFeedbacks(limit = 10) {
-    // 返回最新的反馈列表
-  }
-
-  // 搜索反馈
-  async searchFeedbacks(keyword, filters = {}) {
-    // 根据关键词和筛选条件搜索反馈
-  }
-}
-
-module.exports = Feedback; 
+  return Feedback;
+}; 

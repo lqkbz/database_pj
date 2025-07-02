@@ -40,42 +40,62 @@ const router = new Router({ prefix: '/api/v1' });
 
 // 用户注册示例
 router.post('/auth/register', async (ctx) => {
-  const { username, email, password } = ctx.request.body;
-  
-  // 输入验证
-  if (!username || !email || !password) {
-    throw createError.validation('用户名、邮箱和密码都是必填项');
+  try {
+    const { username, password } = ctx.request.body;
+    
+    // 基础验证
+    if (!username || !password) {
+      ctx.status = 400;
+      ctx.body = {
+        status: 'error',
+        message: '缺少必要字段'
+      };
+      return;
+    }
+    
+    // 示例：简单格式验证
+    if (username.length < 3) {
+      ctx.status = 400;
+      ctx.body = {
+        status: 'error',
+        message: '用户名至少3个字符'
+      };
+      return;
+    }
+    
+    // 示例：模拟用户名冲突检查
+    if (username === 'admin') {
+      ctx.status = 409;
+      ctx.body = {
+        status: 'error',
+        message: '用户名已存在'
+      };
+      return;
+    }
+    
+    // 创建用户（模拟）
+    const newUser = {
+      id: Date.now().toString(),
+      username,
+      createdAt: new Date().toISOString()
+    };
+    
+    ctx.status = 201;
+    ctx.body = {
+      status: 'success',
+      message: '注册成功',
+      data: {
+        user: newUser
+      }
+    };
+  } catch (error) {
+    ctx.status = 500;
+    ctx.body = {
+      status: 'error',
+      message: '注册失败',
+      error: error.message
+    };
   }
-  
-  if (password.length < 8) {
-    throw createError.validation('密码长度至少8位');
-  }
-  
-  // 检查邮箱格式
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
-    throw createError.validation('邮箱格式不正确');
-  }
-  
-  // 模拟检查用户是否已存在
-  if (email === 'test@example.com') {
-    throw createError.conflict('邮箱已被注册');
-  }
-  
-  // 模拟创建用户
-  const user = {
-    id: Date.now(),
-    username,
-    email,
-    createdAt: new Date()
-  };
-  
-  ctx.status = 201;
-  ctx.body = {
-    status: 'success',
-    message: '注册成功',
-    data: user
-  };
 });
 
 /**

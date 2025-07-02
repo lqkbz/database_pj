@@ -15,188 +15,125 @@ const logger = createLogger('BusinessModule');
 class UserService {
   
   /**
-   * 用户注册
+   * 创建新用户的主要业务逻辑
    * @param {Object} userData - 用户数据
-   * @returns {Object} 注册结果
+   * @returns {Object} 创建的用户对象
    */
-  static async register(userData) {
-    const { username, email, password, phone } = userData;
-    
-    // 1. 输入验证错误处理
-    this.validateUserInput({ username, email, password, phone });
-    
-    // 2. 业务规则检查
-    await this.checkBusinessRules({ username, email, phone });
-    
-    // 3. 数据库操作错误处理
+  static async createUser(userData) {
     try {
-      // 模拟数据库操作
-      const user = await this.createUserInDatabase(userData);
+      // 提取用户数据
+      const { username, password } = userData;
       
-      logger.info(`用户注册成功: ${username}`);
+      // 1. 数据验证
+      this.validateUserInput({ username, password });
+      
+      // 2. 业务规则检查
+      await this.checkBusinessRules({ username });
+      
+      // 3. 创建用户
+      const user = await this.createUserRecord({
+        username,
+        password,
+        status: 'active',
+        createdAt: new Date()
+      });
+      
+      // 4. 返回处理后的用户信息
       return {
-        success: true,
-        data: {
-          id: user.id,
-          username: user.username,
-          email: user.email
-        }
+        id: user.id,
+        username: user.username,
+        status: user.status,
+        createdAt: user.createdAt
       };
-      
     } catch (error) {
-      // 数据库相关错误处理
-      if (error.code === '23505') { // PostgreSQL唯一约束错误
-        throw createError.conflict('用户名或邮箱已存在');
+      if (error instanceof BusinessError) {
+        throw error;
       }
       
-      if (error.code === 'ECONNREFUSED') {
-        logger.error('数据库连接失败', error);
-        throw createError.internal('服务暂时不可用，请稍后重试');
-      }
-      
-      // 其他未知数据库错误
-      logger.error('数据库操作失败', error);
-      throw createError.internal('注册失败，请联系技术支持');
+      // 处理意外错误
+      throw new BusinessError(
+        'USER_CREATION_FAILED',
+        '用户创建失败',
+        error
+      );
     }
   }
-  
+
   /**
-   * 输入验证
-   * @param {Object} data - 要验证的数据
+   * 验证用户输入数据
+   * @param {Object} data - 输入数据
    */
   static validateUserInput(data) {
-    const { username, email, password, phone } = data;
+    const { username, password } = data;
     
     // 必填字段检查
-    if (!username || !email || !password) {
-      throw createError.validation('用户名、邮箱和密码都是必填项');
+    if (!username || !password) {
+      throw new BusinessError(
+        'MISSING_REQUIRED_FIELDS',
+        '缺少必要字段：用户名和密码'
+      );
     }
     
-    // 用户名格式检查
+    // 用户名格式验证
     if (username.length < 3 || username.length > 20) {
-      throw createError.validation('用户名长度必须在3-20个字符之间', {
-        field: 'username',
-        minLength: 3,
-        maxLength: 20,
-        currentLength: username.length
-      });
+      throw new BusinessError(
+        'INVALID_USERNAME_FORMAT',
+        '用户名长度必须在3-20个字符之间'
+      );
     }
     
-    // 用户名字符检查
-    const usernameRegex = /^[a-zA-Z0-9_-]+$/;
-    if (!usernameRegex.test(username)) {
-      throw createError.validation('用户名只能包含字母、数字、下划线和连字符');
-    }
-    
-    // 邮箱格式检查
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      throw createError.validation('邮箱格式不正确');
-    }
-    
-    // 密码强度检查
-    if (password.length < 8) {
-      throw createError.validation('密码长度至少8位');
-    }
-    
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/;
-    if (!passwordRegex.test(password)) {
-      throw createError.validation('密码必须包含大小写字母和数字');
-    }
-    
-    // 手机号格式检查（可选）
-    if (phone) {
-      const phoneRegex = /^1[3-9]\d{9}$/;
-      if (!phoneRegex.test(phone)) {
-        throw createError.validation('手机号格式不正确');
-      }
+    // 密码强度验证
+    if (password.length < 6) {
+      throw new BusinessError(
+        'WEAK_PASSWORD',
+        '密码长度至少6个字符'
+      );
     }
   }
-  
+
   /**
-   * 业务规则检查
-   * @param {Object} data - 要检查的数据
+   * 检查业务规则
+   * @param {Object} data - 数据对象
    */
   static async checkBusinessRules(data) {
-    const { username, email, phone } = data;
+    const { username } = data;
     
-    // 检查用户名是否已存在
+    // 检查用户名唯一性
     const existingUser = await this.findUserByUsername(username);
     if (existingUser) {
-      throw createError.conflict('用户名已被注册', {
-        field: 'username',
-        value: username
-      });
+      throw new BusinessError(
+        'DUPLICATE_USERNAME',
+        '用户名已存在',
+        {
+          field: 'username',
+          value: username
+        }
+      );
     }
     
-    // 检查邮箱是否已存在
-    const existingEmail = await this.findUserByEmail(email);
-    if (existingEmail) {
-      throw createError.conflict('邮箱已被注册', {
-        field: 'email',
-        value: email
-      });
-    }
-    
-    // 检查手机号是否已存在（如果提供）
-    if (phone) {
-      const existingPhone = await this.findUserByPhone(phone);
-      if (existingPhone) {
-        throw createError.conflict('手机号已被注册', {
-          field: 'phone',
-          value: phone
-        });
-      }
-    }
-    
-    // 检查是否在黑名单中
-    const isBlacklisted = await this.checkBlacklist(email);
-    if (isBlacklisted) {
-      throw createError.forbidden('该邮箱已被列入黑名单');
-    }
-    
-    // 检查注册频率限制
-    const registrationCount = await this.getRegistrationCountByIP();
-    if (registrationCount > 5) {
-      throw createError.rateLimit('注册过于频繁，请稍后再试');
-    }
+    // 其他业务规则检查...
   }
-  
+
   /**
-   * 模拟数据库查询方法
+   * 根据用户名查找用户
+   * @param {string} username - 用户名
+   * @returns {Object|null} 用户对象或null
    */
   static async findUserByUsername(username) {
     // 模拟数据库查询
-    return null; // 假设不存在
+    return null;
   }
-  
-  static async findUserByEmail(email) {
-    // 模拟数据库查询
-    return null; // 假设不存在
-  }
-  
-  static async findUserByPhone(phone) {
-    // 模拟数据库查询
-    return null; // 假设不存在
-  }
-  
-  static async checkBlacklist(email) {
-    // 模拟黑名单检查
-    return false;
-  }
-  
-  static async getRegistrationCountByIP() {
-    // 模拟IP注册频率检查
-    return 0;
-  }
-  
-  static async createUserInDatabase(userData) {
-    // 模拟数据库操作
+
+  /**
+   * 创建用户记录
+   * @param {Object} userData - 用户数据
+   * @returns {Object} 创建的用户对象
+   */
+  static async createUserRecord(userData) {
+    // 模拟数据库插入
     return {
-      id: 'user_' + Date.now(),
-      username: userData.username,
-      email: userData.email,
-      createdAt: new Date()
+      id: Date.now().toString(),
+      ...userData
     };
   }
 }
@@ -333,13 +270,13 @@ const userController = {
    */
   async register(ctx) {
     // 直接调用业务服务，错误会被全局中间件捕获
-    const result = await UserService.register(ctx.request.body);
+    const result = await UserService.createUser(ctx.request.body);
     
     ctx.status = 201;
     ctx.body = {
       status: 'success',
       message: '注册成功',
-      data: result.data
+      data: result
     };
   },
   

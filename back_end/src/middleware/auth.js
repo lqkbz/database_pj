@@ -78,7 +78,7 @@ const authMiddleware = async (ctx, next) => {
     
     // 验证令牌
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-super-secret-jwt-key-here');
       
       // 验证用户角色是否有效
       const validRoles = ['customer', 'mechanic', 'admin'];
@@ -101,9 +101,7 @@ const authMiddleware = async (ctx, next) => {
         username: decoded.username,
         role: decoded.role,
         status: decoded.status,
-        fullName: decoded.fullName,
-        phone: decoded.phone,
-        email: decoded.email
+        fullName: decoded.fullName
       };
       
       // 继续处理请求
@@ -138,7 +136,7 @@ const optionalAuth = async (ctx, next) => {
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.substring(7);
       try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-super-secret-jwt-key-here');
         
         // 验证角色和状态
         const validRoles = ['customer', 'mechanic', 'admin'];
@@ -148,9 +146,7 @@ const optionalAuth = async (ctx, next) => {
             username: decoded.username,
             role: decoded.role,
             status: decoded.status,
-            fullName: decoded.fullName,
-            phone: decoded.phone,
-            email: decoded.email
+            fullName: decoded.fullName
           };
         } else {
           ctx.state.user = null;
@@ -180,9 +176,7 @@ const generateToken = (user) => {
     username: user.username,
     role: user.role,
     status: user.status,
-    fullName: user.fullName,
-    phone: user.phone,
-    email: user.email
+    fullName: user.fullName
   };
   
   const options = {
@@ -190,7 +184,7 @@ const generateToken = (user) => {
     issuer: 'vehicle-repair-system'
   };
   
-  return jwt.sign(payload, process.env.JWT_SECRET || 'your-secret-key', options);
+  return jwt.sign(payload, process.env.JWT_SECRET || 'your-super-secret-jwt-key-here', options);
 };
 
 /**
@@ -200,7 +194,7 @@ const generateToken = (user) => {
  */
 const verifyRefreshToken = (refreshToken) => {
   try {
-    return jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || 'your-refresh-secret');
+    return jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || 'your-super-secret-refresh-key-here');
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
       throw createAuthError.tokenExpired();

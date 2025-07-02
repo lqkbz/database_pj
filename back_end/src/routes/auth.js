@@ -6,9 +6,13 @@ const { login, register, profile, refresh } = require('../modules/auth');
 
 // Import middleware
 const { authMiddleware } = require('../middleware/auth');
+const { requireRole } = require('../middleware/rbac');
 const { createLogger } = require('../middleware/logger');
 
 const logger = createLogger('AuthRoutes');
+
+// Middleware to ensure all authenticated users can access auth routes
+const allUserAccess = requireRole(['customer', 'mechanic', 'admin']);
 
 // 登录路由 - 不需要认证
 router.post('/api/v1/auth/login', async (ctx, next) => {
@@ -22,10 +26,9 @@ router.post('/api/v1/auth/register', async (ctx, next) => {
   await register(ctx, next);
 });
 
-// 用户档案路由 - 需要认证
-// 注意：虽然主应用已经有了访问控制，但这里明确添加authMiddleware确保认证状态
-router.get('/api/v1/auth/profile', authMiddleware, async (ctx, next) => {
-  logger.info(`用户 ${ctx.state.user.id} 查看个人档案`);
+// 用户档案路由 - 需要认证，所有角色都可访问
+router.get('/api/v1/auth/profile', authMiddleware, allUserAccess, async (ctx, next) => {
+  logger.info(`用户 ${ctx.state.user.id}(${ctx.state.user.role}) 查看个人档案`);
   await profile(ctx, next);
 });
 
@@ -35,8 +38,8 @@ router.post('/api/v1/auth/refresh', async (ctx, next) => {
   await refresh(ctx, next);
 });
 
-// 登出路由 - 需要认证
-router.post('/api/v1/auth/logout', authMiddleware, async (ctx) => {
+// 登出路由 - 需要认证，所有角色都可访问
+router.post('/api/v1/auth/logout', authMiddleware, allUserAccess, async (ctx) => {
   const user = ctx.state.user;
   logger.info(`用户 ${user.id}(${user.role}) 退出登录`);
   
@@ -55,8 +58,8 @@ router.post('/api/v1/auth/logout', authMiddleware, async (ctx) => {
   };
 });
 
-// 验证令牌状态路由 - 需要认证
-router.get('/api/v1/auth/verify', authMiddleware, async (ctx) => {
+// 验证令牌状态路由 - 需要认证，所有角色都可访问
+router.get('/api/v1/auth/verify', authMiddleware, allUserAccess, async (ctx) => {
   const user = ctx.state.user;
   
   ctx.body = {

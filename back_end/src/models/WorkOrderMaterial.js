@@ -18,98 +18,286 @@
  * - 一种配件可以用于多个工单
  */
 
-class WorkOrderMaterial {
-  constructor(db) {
-    this.db = db;
-    this.tableName = 'work_order_materials';
-  }
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     WorkOrderMaterial:
+ *       type: object
+ *       properties:
+ *         order_id:
+ *           type: integer
+ *           description: 工单ID
+ *         part_id:
+ *           type: integer
+ *           description: 配件ID
+ *         qty:
+ *           type: integer
+ *           description: 使用数量
+ *         price:
+ *           type: number
+ *           format: decimal
+ *           description: 配件单价
+ */
 
-  // 创建工单配件关联表
-  async createTable() {
-    const sql = `
-      CREATE TABLE IF NOT EXISTS ${this.tableName} (
-        order_id BIGINT NOT NULL,
-        part_id BIGINT NOT NULL,
-        qty INT NOT NULL,
-        price DECIMAL(10,2) NOT NULL,
-        total_cost DECIMAL(10,2) GENERATED ALWAYS AS (qty * price) STORED,
-        added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (order_id, part_id),
-        FOREIGN KEY (order_id) REFERENCES work_orders(order_id),
-        FOREIGN KEY (part_id) REFERENCES parts(part_id),
-        FOREIGN KEY (added_by) REFERENCES users(user_id),
-        INDEX idx_part_id (part_id),
-        INDEX idx_added_at (added_at)
-      )`;
-    // 执行SQL创建表
-  }
+const { DataTypes } = require('sequelize');
 
-  // 添加配件到工单
-  async addMaterial(orderId, partId, quantity, price, addedBy) {
+module.exports = (sequelize) => {
+  const WorkOrderMaterial = sequelize.define('WorkOrderMaterial', {
+    order_id: {
+      type: DataTypes.BIGINT,
+      primaryKey: true,
+      field: 'order_id',
+      references: {
+        model: 'work_orders',
+        key: 'order_id'
+      }
+    },
+    part_id: {
+      type: DataTypes.BIGINT,
+      primaryKey: true,
+      field: 'part_id',
+      references: {
+        model: 'parts',
+        key: 'part_id'
+      }
+    },
+    qty: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      field: 'qty'
+    },
+    price: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      field: 'price'
+    }
+  }, {
+    tableName: 'work_order_materials',
+    timestamps: false,
+    indexes: [
+      {
+        fields: ['part_id']
+      }
+    ]
+  });
+
+  // 实例方法：计算总成本
+  WorkOrderMaterial.prototype.getTotalCost = function() {
+    return parseFloat(this.qty) * parseFloat(this.price);
+  };
+
+  // 实例方法：更新数量
+  WorkOrderMaterial.prototype.updateQuantity = async function(newQuantity) {
     // 检查库存是否充足
-    // 添加配件使用记录
+    const models = sequelize.models;
+    const currentStock = await models.InventoryTxn.getCurrentStock(this.part_id);
+    const stockDifference = newQuantity - this.qty;
+    
+    if (stockDifference > 0 && currentStock < stockDifference) {
+      throw new Error(`库存不足，当前库存：${currentStock}，需要额外：${stockDifference}`);
+    }
+
+    // 更新库存记录
+    if (stockDifference !== 0) {
+      await models.InventoryTxn.create({
+        part_id: this.part_id,
+        order_id: this.order_id,
+        qty: -stockDifference, // 出库为负数
+        type: 'OUT'
+      });
+    }
+
+    this.qty = newQuantity;
+    return await this.save();
+  };
+
+  // 类方法：添加配件到工单
+  WorkOrderMaterial.addMaterial = async function(orderId, partId, quantity, price) {
+    // 检查库存是否充足
+    const models = sequelize.models;
+    const currentStock = await models.InventoryTxn.getCurrentStock(partId);
+    
+    if (currentStock < quantity) {
+      throw new Error(`库存不足，当前库存：${currentStock}，需要：${quantity}`);
+    }
+
+    // 检查是否已经添加过该配件
+    const existing = await WorkOrderMaterial.findOne({
+      where: { order_id: orderId, part_id: partId }
+    });
+    
+    if (existing) {
+      // 如果已存在，则更新数量
+      return await existing.updateQuantity(existing.qty + quantity);
+    }
+
+    // 创建工单配件记录
+    const workOrderMaterial = await WorkOrderMaterial.create({
+      order_id: orderId,
+      part_id: partId,
+      qty: quantity,
+      price: price
+    });
+
     // 创建库存出库记录
-  }
+    await models.InventoryTxn.recordOutbound(partId, quantity, orderId);
 
-  // 更新配件数量
-  async updateQuantity(orderId, partId, newQuantity) {
-    // 更新配件使用数量
-    // 调整库存记录
-  }
+    return workOrderMaterial;
+  };
 
-  // 移除配件
-  async removeMaterial(orderId, partId) {
-    // 删除配件使用记录
+  // 类方法：移除配件
+  WorkOrderMaterial.removeMaterial = async function(orderId, partId) {
+    const material = await WorkOrderMaterial.findOne({
+      where: { order_id: orderId, part_id: partId }
+    });
+    
+    if (!material) {
+      throw new Error('配件记录不存在');
+    }
+
     // 恢复库存
-  }
+    const models = sequelize.models;
+    await models.InventoryTxn.create({
+      part_id: partId,
+      order_id: orderId,
+      qty: material.qty, // 恢复库存为正数
+      type: 'ADJUST'
+    });
 
-  // 获取工单的所有配件
-  async getOrderMaterials(orderId) {
-    // 返回工单使用的所有配件详情
-  }
+    return await material.destroy();
+  };
 
-  // 获取配件的使用历史
-  async getPartUsageHistory(partId, dateRange) {
-    // 返回配件在各工单中的使用记录
-  }
+  // 类方法：获取工单的所有配件
+  WorkOrderMaterial.getOrderMaterials = async function(orderId) {
+    return await WorkOrderMaterial.findAll({
+      where: { order_id: orderId },
+      include: [{
+        model: sequelize.models.Part,
+        as: 'part',
+        attributes: ['name', 'unit', 'unit_cost']
+      }]
+    });
+  };
 
-  // 计算工单的配件总成本
-  async calculateMaterialCost(orderId) {
-    // 计算工单所有配件的总费用
-  }
+  // 类方法：获取配件的使用历史
+  WorkOrderMaterial.getPartUsageHistory = async function(partId, startDate, endDate) {
+    const whereClause = { part_id: partId };
+    
+    if (startDate && endDate) {
+      whereClause.created_at = {
+        [sequelize.Sequelize.Op.between]: [startDate, endDate]
+      };
+    }
 
-  // 批量添加配件
-  async batchAddMaterials(orderId, materials, addedBy) {
-    // 批量添加多个配件到工单
-    // materials: [{partId, quantity, price}, ...]
-  }
+    return await WorkOrderMaterial.findAll({
+      where: whereClause,
+      include: [{
+        model: sequelize.models.WorkOrder,
+        as: 'workOrder',
+        attributes: ['order_id', 'description', 'created_at'],
+        include: [{
+          model: sequelize.models.Vehicle,
+          as: 'vehicle',
+          attributes: ['plate_no', 'model']
+        }]
+      }],
+      order: [['workOrder', 'created_at', 'DESC']]
+    });
+  };
 
-  // 获取配件使用统计
-  async getMaterialStats(dateRange) {
-    // 返回期间内配件使用统计
-  }
+  // 类方法：计算工单的配件总成本
+  WorkOrderMaterial.calculateMaterialCost = async function(orderId) {
+    const result = await WorkOrderMaterial.findAll({
+      where: { order_id: orderId },
+      attributes: [
+        [sequelize.fn('SUM', sequelize.literal('qty * price')), 'total_cost']
+      ],
+      raw: true
+    });
+    return parseFloat(result[0].total_cost) || 0;
+  };
 
-  // 检查配件库存
-  async checkMaterialAvailability(orderId) {
-    // 检查工单所需配件的库存是否充足
-  }
+  // 类方法：批量添加配件
+  WorkOrderMaterial.batchAddMaterials = async function(orderId, materials) {
+    const models = sequelize.models;
+    const createdMaterials = [];
+    
+    for (const material of materials) {
+      const { partId, quantity, price } = material;
+      
+      // 检查库存
+      const currentStock = await models.InventoryTxn.getCurrentStock(partId);
+      if (currentStock < quantity) {
+        throw new Error(`配件 ${partId} 库存不足，当前库存：${currentStock}，需要：${quantity}`);
+      }
+      
+      // 创建工单配件记录
+      const workOrderMaterial = await WorkOrderMaterial.create({
+        order_id: orderId,
+        part_id: partId,
+        qty: quantity,
+        price: price
+      });
+      
+      createdMaterials.push(workOrderMaterial);
+    }
+    
+    // 批量创建库存出库记录
+    const inventoryTxns = materials.map(material => ({
+      part_id: material.partId,
+      order_id: orderId,
+      qty: -material.quantity,
+      type: 'OUT'
+    }));
+    
+    await models.InventoryTxn.bulkCreate(inventoryTxns);
+    
+    return createdMaterials;
+  };
 
-  // 预留配件库存
-  async reserveMaterials(orderId) {
-    // 为工单预留所需配件库存
-  }
+  // 类方法：获取最常用配件
+  WorkOrderMaterial.getMostUsedParts = async function(limit = 10, startDate, endDate) {
+    const whereClause = {};
+    
+    if (startDate && endDate) {
+      whereClause.created_at = {
+        [sequelize.Sequelize.Op.between]: [startDate, endDate]
+      };
+    }
 
-  // 释放预留库存
-  async releaseReservedMaterials(orderId) {
-    // 释放工单的预留库存
-  }
+    return await WorkOrderMaterial.findAll({
+      where: whereClause,
+      include: [{
+        model: sequelize.models.Part,
+        as: 'part',
+        attributes: ['name', 'unit']
+      }],
+      attributes: [
+        'part_id',
+        [sequelize.fn('SUM', sequelize.col('qty')), 'total_used'],
+        [sequelize.fn('COUNT', sequelize.col('order_id')), 'usage_count']
+      ],
+      group: ['part_id'],
+      order: [[sequelize.literal('total_used'), 'DESC']],
+      limit: limit
+    });
+  };
 
-  // 获取最常用配件
-  async getMostUsedParts(limit = 10, dateRange) {
-    // 返回使用频率最高的配件列表
-  }
-}
+  // 定义关联关系
+  WorkOrderMaterial.associate = function(models) {
+    // 工单配件关联属于一个工单
+    WorkOrderMaterial.belongsTo(models.WorkOrder, {
+      foreignKey: 'order_id',
+      as: 'workOrder'
+    });
 
-module.exports = WorkOrderMaterial; 
+    // 工单配件关联属于一个配件
+    WorkOrderMaterial.belongsTo(models.Part, {
+      foreignKey: 'part_id',
+      as: 'part'
+    });
+  };
+
+  return WorkOrderMaterial;
+}; 

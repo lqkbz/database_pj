@@ -1,14 +1,4 @@
 /**
- * 验证邮箱格式
- * @param {String} email - 待验证的邮箱
- * @returns {Boolean} 是否合法
- */
-exports.isValidEmail = (email) => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-};
-
-/**
  * 验证密码强度
  * @param {String} password - 待验证的密码
  * @returns {Boolean} 是否合法
@@ -37,15 +27,15 @@ exports.isValidUsername = (username) => {
 exports.validateRegistration = (data) => {
   const errors = {};
   
-  if (!data.username || !this.isValidUsername(data.username)) {
-    errors.username = '用户名必须是3-20个字符，只允许字母、数字和下划线';
+  if (!data.name || data.name.trim().length === 0) {
+    errors.name = '用户姓名不能为空';
   }
   
-  if (!data.email || !this.isValidEmail(data.email)) {
-    errors.email = '请提供有效的邮箱地址';
+  if (data.name && data.name.length > 60) {
+    errors.name = '用户姓名不能超过60个字符';
   }
   
-  if (!data.password || !this.isValidPassword(data.password)) {
+  if (!data.password || !exports.isValidPassword(data.password)) {
     errors.password = '密码至少需要8个字符，且必须包含字母和数字';
   }
   
@@ -67,8 +57,8 @@ exports.validateRegistration = (data) => {
 exports.validateLogin = (data) => {
   const errors = {};
   
-  if (!data.username && !data.email) {
-    errors.login = '请提供用户名或邮箱';
+  if (!data.username) {
+    errors.username = '请提供用户名';
   }
   
   if (!data.password) {

@@ -27,196 +27,148 @@
  *     Vehicle:
  *       type: object
  *       properties:
- *         id:
- *           type: string
- *           description: 车辆唯一标识符
- *         make:
- *           type: string
- *           description: 汽车品牌
- *         model:
- *           type: string
- *           description: 汽车型号
- *         year:
+ *         vehicle_id:
  *           type: integer
- *           description: 车辆年份
- *         color:
- *           type: string
- *           description: 车辆颜色
- *         licensePlate:
+ *           description: 车辆唯一标识符
+ *         user_id:
+ *           type: integer
+ *           description: 车主ID
+ *         plate_no:
  *           type: string
  *           description: 车牌号
  *         vin:
  *           type: string
  *           description: 车辆识别号
- *         owner:
+ *         model:
  *           type: string
- *           description: 车主ID
- *         createdAt:
- *           type: string
- *           format: date-time
- *           description: 创建时间
- *         updatedAt:
- *           type: string
- *           format: date-time
- *           description: 更新时间
- *     VehicleDetail:
- *       allOf:
- *         - $ref: '#/components/schemas/Vehicle'
- *         - type: object
- *           properties:
- *             maintenanceHistory:
- *               type: array
- *               description: 维修历史记录
- *               items:
- *                 $ref: '#/components/schemas/WorkOrderSummary'
- *     WorkOrderSummary:
- *       type: object
- *       properties:
- *         id:
- *           type: string
- *           description: 工单ID
- *         description:
- *           type: string
- *           description: 工单描述
- *         status:
- *           type: string
- *           enum: [pending, in_progress, completed, cancelled]
- *           description: 工单状态
- *         createdAt:
- *           type: string
- *           format: date-time
- *           description: 创建时间
- *         completedAt:
- *           type: string
- *           format: date-time
- *           description: 完成时间
+ *           description: 车型
+ *         year:
+ *           type: integer
+ *           description: 车辆年份
  */
 
-const mongoose = require('mongoose');
-const { Schema } = mongoose;
+const { DataTypes } = require('sequelize');
 
-class Vehicle {
-  constructor(db) {
-    this.db = db;
-    this.tableName = 'vehicles';
-  }
+module.exports = (sequelize) => {
+  const Vehicle = sequelize.define('Vehicle', {
+    vehicle_id: {
+      type: DataTypes.BIGINT,
+      primaryKey: true,
+      autoIncrement: true,
+      field: 'vehicle_id'
+    },
+    user_id: {
+      type: DataTypes.BIGINT,
+      allowNull: false,
+      field: 'user_id',
+      references: {
+        model: 'users',
+        key: 'user_id'
+      }
+    },
+    plate_no: {
+      type: DataTypes.STRING,
+      unique: true,
+      field: 'plate_no'
+    },
+    vin: {
+      type: DataTypes.STRING,
+      field: 'vin'
+    },
+    model: {
+      type: DataTypes.STRING,
+      field: 'model'
+    },
+    year: {
+      type: DataTypes.SMALLINT,
+      field: 'year'
+    }
+  }, {
+    tableName: 'vehicles',
+    timestamps: false,
+    indexes: [
+      {
+        unique: true,
+        fields: ['plate_no']
+      },
+      {
+        fields: ['user_id']
+      }
+    ]
+  });
 
-  // 创建车辆表
-  async createTable() {
-    const sql = `
-      CREATE TABLE IF NOT EXISTS ${this.tableName} (
-        vehicle_id BIGINT PRIMARY KEY AUTO_INCREMENT,
-        user_id BIGINT NOT NULL,
-        plate_no VARCHAR(20) UNIQUE NOT NULL,
-        vin VARCHAR(50),
-        model VARCHAR(100),
-        year SMALLINT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(user_id),
-        INDEX idx_user_id (user_id),
-        INDEX idx_plate_no (plate_no)
-      )`;
-    // 执行SQL创建表
-  }
+  // 实例方法：获取维修历史
+  Vehicle.prototype.getRepairHistory = async function() {
+    const models = sequelize.models;
+    return await models.WorkOrder.findAll({
+      where: { vehicle_id: this.vehicle_id },
+      order: [['created_at', 'DESC']],
+      include: [
+        {
+          model: models.User,
+          as: 'customer',
+          attributes: ['name']
+        }
+      ]
+    });
+  };
 
-  // 创建新车辆
-  async create(vehicleData) {
-    // 验证车牌号唯一性
-    // 验证用户存在
-    // 插入车辆数据
-  }
+  // 实例方法：获取最近一次维修
+  Vehicle.prototype.getLastRepair = async function() {
+    const models = sequelize.models;
+    return await models.WorkOrder.findOne({
+      where: { vehicle_id: this.vehicle_id },
+      order: [['created_at', 'DESC']]
+    });
+  };
 
-  // 根据ID查找车辆
-  async findById(vehicleId) {
-    // 返回车辆详细信息
-  }
+  // 实例方法：获取维修统计
+  Vehicle.prototype.getRepairStats = async function() {
+    const models = sequelize.models;
+    const stats = await models.WorkOrder.findAll({
+      where: { vehicle_id: this.vehicle_id },
+      attributes: [
+        [sequelize.fn('COUNT', sequelize.col('order_id')), 'total_repairs'],
+        [sequelize.fn('COUNT', sequelize.literal("CASE WHEN status = 'done' THEN 1 END")), 'completed_repairs']
+      ],
+      include: [{
+        model: models.Payment,
+        attributes: [
+          [sequelize.fn('SUM', sequelize.col('total_fee')), 'total_cost']
+        ]
+      }],
+      raw: true
+    });
+    return stats[0];
+  };
 
-  // 根据车牌号查找车辆
-  async findByPlateNo(plateNo) {
-    // 返回车辆信息
-  }
+  // 定义关联关系
+  Vehicle.associate = function(models) {
+    // 车辆属于一个用户
+    Vehicle.belongsTo(models.User, {
+      foreignKey: 'user_id',
+      as: 'owner'
+    });
 
-  // 根据用户ID获取所有车辆
-  async findByUserId(userId) {
-    // 返回该用户的所有车辆列表
-  }
+    // 车辆有多个工单
+    Vehicle.hasMany(models.WorkOrder, {
+      foreignKey: 'vehicle_id',
+      as: 'workOrders'
+    });
+  };
 
-  // 更新车辆信息
-  async update(vehicleId, updateData) {
-    // 更新车辆基本信息
-  }
+  // 类方法：获取用户的车辆列表
+  Vehicle.getUserVehicles = async function(userId) {
+    return await Vehicle.findAll({
+      where: { user_id: userId },
+      include: [{
+        model: sequelize.models.User,
+        as: 'user',
+        attributes: ['name']
+      }],
+      order: [['created_at', 'DESC']]
+    });
+  };
 
-  // 删除车辆
-  async delete(vehicleId) {
-    // 软删除或检查是否有关联工单
-  }
-
-  // 获取车辆的维修历史
-  async getRepairHistory(vehicleId) {
-    // 返回该车辆的所有维修工单
-  }
-
-  // 获取车辆的最近一次维修
-  async getLastRepair(vehicleId) {
-    // 返回最近的维修记录
-  }
-
-  // 统计车辆的维修次数和费用
-  async getRepairStats(vehicleId) {
-    // 返回维修统计信息
-  }
-}
-
-const vehicleSchema = new Schema({
-  make: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  model: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  year: {
-    type: Number,
-    required: true
-  },
-  color: {
-    type: String,
-    trim: true
-  },
-  licensePlate: {
-    type: String,
-    required: true,
-    trim: true,
-    unique: true
-  },
-  vin: {
-    type: String,
-    trim: true
-  },
-  owner: {
-    type: Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  }
-}, { timestamps: true });
-
-// 创建索引
-vehicleSchema.index({ owner: 1 });
-vehicleSchema.index({ licensePlate: 1 }, { unique: true });
-
-// 添加方法
-vehicleSchema.methods.getMaintenanceHistory = async function() {
-  // 查询与此车辆关联的工单
-  const WorkOrder = mongoose.model('WorkOrder');
-  return WorkOrder.find({ vehicle: this._id })
-    .sort({ createdAt: -1 })
-    .select('description status createdAt completedAt')
-    .exec();
-};
-
-// 创建和导出模型
-module.exports = mongoose.model('Vehicle', vehicleSchema); 
+  return Vehicle;
+}; 

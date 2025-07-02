@@ -20,14 +20,22 @@ const createStaticMiddleware = (options = {}) => {
   } = options;
   
   return async (ctx, next) => {
-    // 检查是否是以/static/开头的路径
-    if (!ctx.path.startsWith('/static/')) {
+    // 检查是否是静态文件请求
+    let relativePath;
+    
+    if (ctx.path.startsWith('/static/')) {
+      // 处理/static/路径下的文件
+      relativePath = ctx.path.replace('/static/', '');
+    } else if (ctx.path === '/favicon.ico') {
+      // 特殊处理favicon.ico
+      relativePath = 'favicon.ico';
+    } else {
+      // 不是静态文件请求，继续下一个中间件
       return next();
     }
     
     try {
       // 从URL获取文件路径
-      const relativePath = ctx.path.replace('/static/', '');
       const filePath = path.join(root, relativePath);
       
       // 安全检查：防止目录遍历

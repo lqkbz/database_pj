@@ -19,97 +19,200 @@
  * - 一个工单对应一个支付记录
  */
 
-class Payment {
-  constructor(db) {
-    this.db = db;
-    this.tableName = 'payments';
-  }
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     Payment:
+ *       type: object
+ *       properties:
+ *         payment_id:
+ *           type: integer
+ *           description: 支付记录唯一标识符
+ *         order_id:
+ *           type: integer
+ *           description: 工单ID
+ *         labor_fee:
+ *           type: number
+ *           format: decimal
+ *           description: 人工费用
+ *         material_fee:
+ *           type: number
+ *           format: decimal
+ *           description: 配件费用
+ *         total_fee:
+ *           type: number
+ *           format: decimal
+ *           description: 总费用
+ *         paid_at:
+ *           type: string
+ *           format: date-time
+ *           description: 支付时间
+ */
 
-  // 创建支付表
-  async createTable() {
-    const sql = `
-      CREATE TABLE IF NOT EXISTS ${this.tableName} (
-        payment_id BIGINT PRIMARY KEY AUTO_INCREMENT,
-        order_id BIGINT UNIQUE NOT NULL,
-        labor_fee DECIMAL(10,2) DEFAULT 0,
-        material_fee DECIMAL(10,2) DEFAULT 0,
-        total_fee DECIMAL(10,2) GENERATED ALWAYS AS (labor_fee + material_fee) STORED,
-        paid_at DATETIME,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        FOREIGN KEY (order_id) REFERENCES work_orders(order_id),
-        INDEX idx_payment_status (payment_status),
-        INDEX idx_paid_at (paid_at)
-      )`;
-    // 执行SQL创建表
-  }
+const { DataTypes } = require('sequelize');
 
-  // 创建支付记录
-  async create(orderId, laborFee, materialFee, discount = 0) {
-    // 创建工单的支付记录
-    // 计算总费用
-  }
+module.exports = (sequelize) => {
+  const Payment = sequelize.define('Payment', {
+    payment_id: {
+      type: DataTypes.BIGINT,
+      primaryKey: true,
+      autoIncrement: true,
+      field: 'payment_id'
+    },
+    order_id: {
+      type: DataTypes.BIGINT,
+      unique: true,
+      allowNull: false,
+      field: 'order_id',
+      references: {
+        model: 'work_orders',
+        key: 'order_id'
+      }
+    },
+    labor_fee: {
+      type: DataTypes.DECIMAL(10, 2),
+      defaultValue: 0,
+      field: 'labor_fee'
+    },
+    material_fee: {
+      type: DataTypes.DECIMAL(10, 2),
+      defaultValue: 0,
+      field: 'material_fee'
+    },
+    total_fee: {
+      type: DataTypes.DECIMAL(10, 2),
+      field: 'total_fee'
+    },
+    paid_at: {
+      type: DataTypes.DATE,
+      field: 'paid_at'
+    }
+  }, {
+    tableName: 'payments',
+    timestamps: false,
+    indexes: [
+      {
+        unique: true,
+        fields: ['order_id']
+      },
+      {
+        fields: ['paid_at']
+      }
+    ],
+    hooks: {
+      beforeSave: (payment, options) => {
+        // 自动计算总费用
+        payment.total_fee = (parseFloat(payment.labor_fee) || 0) + (parseFloat(payment.material_fee) || 0);
+      }
+    }
+  });
 
-  // 根据工单ID查找支付记录
-  async findByOrderId(orderId) {
-    // 返回工单的支付信息
-  }
+  // 实例方法：处理支付
+  Payment.prototype.processPayment = async function() {
+    this.paid_at = new Date();
+    return await this.save();
+  };
 
-  // 更新费用
-  async updateFees(paymentId, laborFee, materialFee, discount = 0) {
-    // 更新人工费、配件费和折扣
-  }
+  // 实例方法：是否已支付
+  Payment.prototype.isPaid = function() {
+    return this.paid_at !== null;
+  };
 
-  // 处理支付
-  async processPayment(paymentId, paymentMethod, paidAmount) {
-    // 记录支付信息
-    // 更新支付状态为已支付
-    // 设置支付时间
-  }
+  // 实例方法：更新费用
+  Payment.prototype.updateFees = async function(laborFee, materialFee) {
+    this.labor_fee = laborFee || 0;
+    this.material_fee = materialFee || 0;
+    this.total_fee = (parseFloat(this.labor_fee) || 0) + (parseFloat(this.material_fee) || 0);
+    return await this.save();
+  };
 
-  // 退款处理
-  async processRefund(paymentId, refundAmount, reason) {
-    // 处理退款
-    // 更新支付状态
-  }
+  // 类方法：获取未支付的工单
+  Payment.getUnpaidOrders = async function() {
+    return await Payment.findAll({
+      where: { paid_at: null },
+      include: [{
+        model: sequelize.models.WorkOrder,
+        as: 'workOrder',
+        include: [
+          {
+            model: sequelize.models.User,
+            as: 'customer',
+            attributes: ['name']
+          },
+          {
+            model: sequelize.models.Vehicle,
+            as: 'vehicle',
+            attributes: ['plate_no', 'model']
+          }
+        ]
+      }]
+    });
+  };
 
-  // 取消支付
-  async cancelPayment(paymentId, reason) {
-    // 取消支付
-    // 更新状态为已取消
-  }
+  // 类方法：获取收入统计
+  Payment.getRevenueStats = async function(startDate, endDate) {
+    const whereClause = {
+      paid_at: { [sequelize.Sequelize.Op.not]: null }
+    };
+    
+    if (startDate && endDate) {
+      whereClause.paid_at = {
+        [sequelize.Sequelize.Op.between]: [startDate, endDate]
+      };
+    }
 
-  // 获取支付统计
-  async getPaymentStats(dateRange) {
-    // 返回期间内的支付统计
-    // 包括总收入、支付方式分布等
-  }
+    return await Payment.findAll({
+      where: whereClause,
+      attributes: [
+        [sequelize.fn('COUNT', sequelize.col('payment_id')), 'total_payments'],
+        [sequelize.fn('SUM', sequelize.col('total_fee')), 'total_revenue'],
+        [sequelize.fn('SUM', sequelize.col('labor_fee')), 'total_labor_fee'],
+        [sequelize.fn('SUM', sequelize.col('material_fee')), 'total_material_fee'],
+        [sequelize.fn('AVG', sequelize.col('total_fee')), 'average_payment']
+      ],
+      raw: true
+    });
+  };
 
-  // 获取未支付的工单
-  async getUnpaidOrders() {
-    // 返回所有未支付的工单列表
-  }
+  // 类方法：获取客户消费记录
+  Payment.getCustomerPayments = async function(customerId) {
+    return await Payment.findAll({
+      include: [{
+        model: sequelize.models.WorkOrder,
+        as: 'workOrder',
+        where: { customer_id: customerId },
+        include: [{
+          model: sequelize.models.Vehicle,
+          as: 'vehicle',
+          attributes: ['plate_no', 'model']
+        }]
+      }],
+      order: [['paid_at', 'DESC']]
+    });
+  };
 
-  // 获取收入报表
-  async getRevenueReport(startDate, endDate, groupBy = 'day') {
-    // 返回收入报表
-    // 支持按日、周、月分组
-  }
+  // 类方法：获取用户的支付记录
+  Payment.getUserPayments = async function(userId) {
+    return await Payment.findAll({
+      where: { user_id: userId },
+      include: [{
+        model: sequelize.models.User,
+        as: 'user',
+        attributes: ['name']
+      }],
+      order: [['created_at', 'DESC']]
+    });
+  };
 
-  // 计算技师提成
-  async calculateCommission(mechanicId, dateRange) {
-    // 根据技师参与的工单计算提成
-  }
+  // 定义关联关系
+  Payment.associate = function(models) {
+    // 支付属于一个工单
+    Payment.belongsTo(models.WorkOrder, {
+      foreignKey: 'order_id',
+      as: 'workOrder'
+    });
+  };
 
-  // 获取客户消费记录
-  async getCustomerPayments(customerId) {
-    // 返回客户的所有支付记录
-  }
-
-  // 批量更新支付状态
-  async batchUpdateStatus(paymentIds, status) {
-    // 批量更新多个支付记录的状态
-  }
-}
-
-module.exports = Payment; 
+  return Payment;
+}; 

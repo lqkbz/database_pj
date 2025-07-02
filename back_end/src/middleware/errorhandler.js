@@ -105,34 +105,52 @@ const BusinessErrorCodes = {
  * 错误处理中间件
  */
 const errorHandler = async (ctx, next) => {
+  console.log('=== 1. ErrorHandler 开始 ===');
+  
   try {
     await next();
+    console.log('=== 2. ErrorHandler 正常结束 ===');
   } catch (error) {
-    // 记录错误日志
-    console.error('Error occurred:', {
+    console.log('=== 3. ErrorHandler 捕获错误 ===');
+    console.log('错误消息:', error.message);
+    
+    try {
+      console.log('=== 4. 开始处理错误 ===');
+      
+      // 简化的错误日志
+      console.log('ERROR INFO:', {
       message: error.message,
-      code: error.code,
-      stack: error.stack,
-      url: ctx.url,
-      method: ctx.method,
-      ip: ctx.ip,
-      userAgent: ctx.headers['user-agent'],
-      user: ctx.state.user ? {
-        id: ctx.state.user.id,
-        role: ctx.state.user.role,
-        username: ctx.state.user.username
-      } : null,
-      timestamp: new Date().toISOString()
-    });
-
-    // 设置错误响应
+        type: error.constructor.name,
+        statusCode: error.statusCode,
+        code: error.code
+      });
+      
+      console.log('=== 5. 调用 formatError ===');
     const errorResponse = formatError(error, ctx);
+      
+      console.log('=== 6. formatError 完成 ===');
+      console.log('响应状态码:', errorResponse.status);
     
     ctx.status = errorResponse.status;
     ctx.body = errorResponse.body;
     
-    // 触发错误事件（可用于额外的错误处理，如发送通知）
-    ctx.app.emit('error', error, ctx);
+      console.log('=== 7. 设置响应完成 ===');
+      
+    } catch (innerError) {
+      console.log('=== ERROR: formatError 过程出错 ===');
+      console.log('内部错误:', innerError.message);
+      
+      // 设置默认错误响应
+      ctx.status = 500;
+      ctx.body = {
+        status: 'error',
+        code: 'INTERNAL_ERROR',
+        message: '服务器内部错误',
+        timestamp: new Date().toISOString()
+      };
+    }
+    
+    console.log('=== 8. ErrorHandler 错误处理完成 ===');
   }
 };
 
@@ -140,7 +158,15 @@ const errorHandler = async (ctx, next) => {
  * 格式化错误响应
  */
 function formatError(error, ctx) {
+  console.log('=== formatError 开始 ===');
+  
+  try {
   const isDevelopment = process.env.NODE_ENV === 'development';
+    
+    console.log('=== A. 分析错误对象 ===');
+    console.log('类型:', error.constructor.name);
+    console.log('是否为AppError:', error instanceof AppError);
+    console.log('statusCode:', error.statusCode);
   
   // 默认错误信息
   let status = 500;
@@ -148,15 +174,20 @@ function formatError(error, ctx) {
   let message = '服务器内部错误';
   let details = null;
 
+    console.log('=== B. 判断错误类型 ===');
+
   // 处理自定义应用错误
   if (error instanceof AppError || error instanceof BusinessError) {
+      console.log('=== C. 处理AppError ===');
     status = error.statusCode;
     code = error.code;
     message = error.message;
     details = error.details;
+      console.log('设置状态码:', status);
   }
   // 处理业务逻辑错误
   else if (error.isBusiness) {
+      console.log('=== D. 处理BusinessError ===');
     status = error.statusCode || 400;
     code = error.code || 'BUSINESS_ERROR';
     message = error.message;
@@ -164,6 +195,7 @@ function formatError(error, ctx) {
   }
   // 处理验证错误
   else if (error.name === 'ValidationError') {
+      console.log('=== E. 处理ValidationError ===');
     status = 400;
     code = 'VALIDATION_ERROR';
     message = '数据验证失败';
@@ -171,6 +203,7 @@ function formatError(error, ctx) {
   }
   // 处理数据库错误
   else if (error.code === 'ER_DUP_ENTRY') {
+      console.log('=== F. 处理ER_DUP_ENTRY ===');
     status = 409;
     code = 'CONFLICT_ERROR';
     // 解析重复字段信息
@@ -178,8 +211,8 @@ function formatError(error, ctx) {
       message = '该车牌号已存在';
     } else if (error.message.includes('username')) {
       message = '用户名已被使用';
-    } else if (error.message.includes('email')) {
-      message = '邮箱已被注册';
+    } else if (error.message.includes('name')) {
+      message = '用户名已被使用';
     } else {
       message = '数据已存在，请检查唯一性约束';
     }
@@ -234,6 +267,10 @@ function formatError(error, ctx) {
     message = '参数格式错误';
   }
 
+    console.log('=== G. 构建响应体 ===');
+    console.log('最终状态码:', status);
+    console.log('最终消息:', message);
+
   // 构建响应体
   const responseBody = {
     status: 'error',
@@ -269,10 +306,33 @@ function formatError(error, ctx) {
     responseBody.message = '服务器内部错误';
   }
 
-  return {
+    console.log('=== H. formatError 返回结果 ===');
+    const result = {
     status,
     body: responseBody
   };
+    console.log('返回结果:', result);
+    
+    return result;
+    
+  } catch (formatError) {
+    console.log('=== ERROR: formatError 内部错误 ===');
+    console.log('内部错误消息:', formatError.message);
+    console.log('内部错误堆栈:', formatError.stack);
+    
+    // 返回默认错误响应
+    return {
+      status: 500,
+      body: {
+        status: 'error',
+        code: 'INTERNAL_ERROR',
+        message: '服务器内部错误',
+        timestamp: new Date().toISOString(),
+        path: ctx.url,
+        method: ctx.method
+      }
+    };
+  }
 }
 
 /**
@@ -301,6 +361,14 @@ const notFoundHandler = async (ctx, next) => {
 const createError = {
   validation: (message, details = null) => {
     return new AppError(message, ErrorTypes.VALIDATION_ERROR, details);
+  },
+  
+  authentication: (message = '认证失败') => {
+    return new AppError(message, ErrorTypes.AUTHENTICATION_ERROR);
+  },
+  
+  authorization: (message = '权限不足') => {
+    return new AppError(message, ErrorTypes.AUTHORIZATION_ERROR);
   },
   
   notFound: (message = '资源不存在') => {

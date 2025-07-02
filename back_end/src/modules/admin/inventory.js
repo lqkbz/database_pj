@@ -1,14 +1,16 @@
 const { createError } = require('../../middleware/errorhandler');
 const { createLogger } = require('../../middleware/logger');
+const { Part, InventoryTxn, WorkOrder, User } = require('../../models');
+const { Op } = require('sequelize');
 
 const logger = createLogger('AdminInventory');
 
 /**
  * @swagger
- * /api/admin/parts:
+ * /api/admin/inventory/parts:
  *   get:
- *     summary: 获取所有零部件列表
- *     description: 获取系统中所有零部件的列表，支持分页、搜索和过滤
+ *     summary: 获取配件库存列表
+ *     description: 获取所有配件的库存信息，支持搜索和过滤
  *     tags: [Admin]
  *     parameters:
  *       - in: query
@@ -30,18 +32,18 @@ const logger = createLogger('AdminInventory');
  *         name: search
  *         schema:
  *           type: string
- *         description: 搜索关键词（零部件名称、编号等）
+ *         description: 搜索关键词（配件名称）
  *       - in: query
- *         name: category
+ *         name: lowStock
+ *         schema:
+ *           type: boolean
+ *         description: 仅显示库存不足的配件
+ *       - in: query
+ *         name: unit
  *         schema:
  *           type: string
- *         description: 零部件类别
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *           enum: [active, inactive, low_stock, out_of_stock]
- *         description: 零部件状态
+ *           enum: [pcs, L, kg]
+ *         description: 计量单位过滤
  *     responses:
  *       200:
  *         description: 成功
@@ -67,129 +69,224 @@ const logger = createLogger('AdminInventory');
  *       500:
  *         description: 服务器错误
  */
-const listParts = async (ctx) => {
-  const { page = 1, limit = 10, search, category, status } = ctx.query;
+const getInventoryList = async (ctx) => {
+  const { page = 1, limit = 10, search, lowStock, unit } = ctx.query;
   
+  try {
   // 构建查询条件
-  const query = {};
+    const whereClause = {};
+    
   if (search) {
-    // 实际项目中替换为搜索条件
-    query.search = search;
+      whereClause.name = {
+        [Op.like]: `%${search}%`
+      };
   }
   
-  if (category) {
-    query.category = category;
+    if (unit) {
+      whereClause.unit = unit;
   }
   
-  if (status) {
-    query.status = status;
-  }
-  
-  // 从数据库获取零部件列表
-  // 实际项目中替换为数据库查询
-  const parts = [
-    {
-      id: 'part1',
-      name: '机油滤清器',
-      code: 'OIL-FIL-001',
-      category: '滤清器',
-      brand: '博世',
-      model: 'P7100',
-      compatibleVehicles: ['丰田', '本田', '日产'],
-      unitPrice: 45.0,
-      costPrice: 30.0,
-      currentStock: 120,
-      minStock: 20,
-      status: 'active',
-      location: 'A-01-02',
-      imageUrl: 'https://example.com/images/oil-filter.jpg'
-    },
-    {
-      id: 'part2',
-      name: '火花塞',
-      code: 'SPARK-001',
-      category: '点火系统',
-      brand: 'NGK',
-      model: 'BKR6E',
-      compatibleVehicles: ['丰田', '本田', '马自达'],
-      unitPrice: 35.0,
-      costPrice: 22.0,
-      currentStock: 80,
-      minStock: 15,
-      status: 'active',
-      location: 'A-02-03',
-      imageUrl: 'https://example.com/images/spark-plug.jpg'
-    },
-    {
-      id: 'part3',
-      name: '刹车片',
-      code: 'BRAKE-001',
-      category: '刹车系统',
-      brand: '刹明',
-      model: 'SM-650',
-      compatibleVehicles: ['大众', '奥迪', '宝马'],
-      unitPrice: 280.0,
-      costPrice: 180.0,
-      currentStock: 35,
-      minStock: 10,
-      status: 'active',
-      location: 'B-01-01',
-      imageUrl: 'https://example.com/images/brake-pads.jpg'
-    },
-    {
-      id: 'part4',
-      name: '空气滤清器',
-      code: 'AIR-FIL-001',
-      category: '滤清器',
-      brand: '曼牌',
-      model: 'C3090',
-      compatibleVehicles: ['奔驰', '宝马', '奥迪'],
-      unitPrice: 75.0,
-      costPrice: 50.0,
-      currentStock: 5,
-      minStock: 10,
-      status: 'low_stock',
-      location: 'A-01-04',
-      imageUrl: 'https://example.com/images/air-filter.jpg'
+    // 查询配件列表，包含库存信息
+    const { count, rows: parts } = await Part.findAndCountAll({
+      where: whereClause,
+      include: [
+        {
+          model: InventoryTxn,
+          as: 'inventoryTransactions',
+          attributes: []
+        }
+      ],
+      attributes: [
+        'part_id',
+        'name',
+        'unit',
+        'unit_cost',
+        [Part.sequelize.fn('COALESCE', Part.sequelize.fn('SUM', Part.sequelize.col('inventoryTransactions.qty')), 0), 'current_stock']
+      ],
+      group: ['part_id'],
+      offset: (page - 1) * limit,
+      limit: parseInt(limit),
+      order: [['name', 'ASC']]
+    });
+
+    // 如果只显示库存不足的配件
+    let filteredParts = parts;
+    if (lowStock === 'true') {
+      filteredParts = parts.filter(part => {
+        const stock = parseInt(part.getDataValue('current_stock')) || 0;
+        return stock < 10; // 默认库存阈值为10
+      });
     }
-  ];
+
+    // 处理数据
+    const processedParts = filteredParts.map(part => ({
+      id: part.part_id,
+      name: part.name,
+      unit: part.unit,
+      unitCost: parseFloat(part.unit_cost),
+      currentStock: parseInt(part.getDataValue('current_stock')) || 0,
+      stockStatus: (parseInt(part.getDataValue('current_stock')) || 0) < 10 ? 'low' : 'normal'
+    }));
   
-  // 计算总数量
-  const total = parts.length;
-  
-  // 添加库存状态信息
-  const partsWithStatus = parts.map(part => {
-    let stockStatus = 'normal';
-    if (part.currentStock <= 0) {
-      stockStatus = 'out_of_stock';
-    } else if (part.currentStock < part.minStock) {
-      stockStatus = 'low_stock';
-    }
-    return { ...part, stockStatus };
-  });
-  
-  logger.info(`管理员查询了零部件列表，返回 ${parts.length} 条记录`);
+    logger.info(`管理员查询了配件库存列表，返回 ${processedParts.length} 条记录`);
   
   ctx.body = {
     status: 'success',
     data: {
-      parts: partsWithStatus,
+        parts: processedParts,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / parseInt(limit))
+          total: count,
+          pages: Math.ceil(count / parseInt(limit))
+        }
       }
+    };
+  } catch (error) {
+    logger.error('获取配件库存列表失败:', error);
+    throw createError.internal('获取配件库存列表失败');
     }
-  };
 };
 
 /**
  * @swagger
- * /api/admin/parts/{id}:
- *   get:
- *     summary: 获取零部件详情
- *     description: 获取指定零部件的详细信息，包括基本信息、库存历史等
+ * /api/admin/inventory/parts:
+ *   post:
+ *     summary: 添加新配件
+ *     description: 在系统中添加新的配件信息
+ *     tags: [Admin]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - unit
+ *               - unitCost
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 description: 配件名称
+ *               unit:
+ *                 type: string
+ *                 enum: [pcs, L, kg]
+ *                 description: 计量单位
+ *               unitCost:
+ *                 type: number
+ *                 description: 单位成本
+ *               initialStock:
+ *                 type: integer
+ *                 description: 初始库存数量
+ *     responses:
+ *       201:
+ *         description: 创建成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器错误
+ */
+const addPart = async (ctx) => {
+  const { name, unit, unitCost, initialStock = 0 } = ctx.request.body;
+  
+  try {
+  // 验证必填字段
+    const requiredFields = ['name', 'unit', 'unitCost'];
+  
+  for (const field of requiredFields) {
+      if (!ctx.request.body[field]) {
+      throw createError.validation(`缺少必填字段: ${field}`);
+    }
+  }
+  
+    // 验证计量单位
+    if (!['pcs', 'L', 'kg'].includes(unit)) {
+      throw createError.validation('无效的计量单位');
+  }
+  
+    // 验证成本
+    if (isNaN(unitCost) || unitCost < 0) {
+      throw createError.validation('单位成本必须是非负数');
+  }
+  
+    // 检查配件名称是否已存在
+    const existingPart = await Part.findOne({ where: { name } });
+    if (existingPart) {
+      throw createError.conflict('配件名称已存在');
+  }
+  
+    // 使用事务创建配件和初始库存记录
+    const result = await Part.sequelize.transaction(async (t) => {
+      // 创建配件
+      const part = await Part.create({
+        name,
+        unit,
+        unit_cost: unitCost
+      }, { transaction: t });
+      
+      // 如果有初始库存，创建入库记录
+      if (initialStock > 0) {
+        await InventoryTxn.create({
+          part_id: part.part_id,
+          txn_type: 'in',
+          qty: initialStock,
+          unit_cost: unitCost,
+          total_cost: unitCost * initialStock,
+          order_id: null,
+          operator_id: ctx.state.user?.id || null,
+          note: '初始库存'
+        }, { transaction: t });
+      }
+      
+      return part;
+    });
+  
+    logger.info(`管理员添加了新配件: ${name} (ID: ${result.part_id})`);
+  
+  ctx.status = 201;
+  ctx.body = {
+    status: 'success',
+      message: '配件添加成功',
+    data: {
+        part: {
+          id: result.part_id,
+          name: result.name,
+          unit: result.unit,
+          unitCost: parseFloat(result.unit_cost),
+          currentStock: initialStock
+        }
+    }
+  };
+  } catch (error) {
+    if (error.status) {
+      throw error;
+    }
+    logger.error('添加配件失败:', error);
+    throw createError.internal('添加配件失败');
+  }
+};
+
+/**
+ * @swagger
+ * /api/admin/inventory/parts/{id}:
+ *   patch:
+ *     summary: 更新配件信息
+ *     description: 更新指定配件的基本信息
  *     tags: [Admin]
  *     parameters:
  *       - in: path
@@ -197,7 +294,287 @@ const listParts = async (ctx) => {
  *         required: true
  *         schema:
  *           type: string
- *         description: 零部件ID
+ *         description: 配件ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 description: 配件名称
+ *               unit:
+ *                 type: string
+ *                 enum: [pcs, L, kg]
+ *                 description: 计量单位
+ *               unitCost:
+ *                 type: number
+ *                 description: 单位成本
+ *     responses:
+ *       200:
+ *         description: 更新成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 配件不存在
+ *       500:
+ *         description: 服务器错误
+ */
+const updatePart = async (ctx) => {
+  const partId = ctx.params.id;
+  const updateData = ctx.request.body;
+  
+  try {
+    // 获取配件信息
+    const part = await Part.findByPk(partId);
+  
+  if (!part) {
+      throw createError.notFound('配件不存在');
+  }
+  
+  // 验证更新数据
+    const allowedFields = ['name', 'unit', 'unit_cost'];
+  const updates = {};
+  
+  Object.keys(updateData).forEach(key => {
+      const mappedKey = key === 'unitCost' ? 'unit_cost' : key;
+      if (allowedFields.includes(mappedKey)) {
+        updates[mappedKey] = updateData[key];
+    }
+  });
+  
+  if (Object.keys(updates).length === 0) {
+    throw createError.validation('没有提供有效的更新字段');
+  }
+  
+  // 特殊字段验证
+    if (updates.unit && !['pcs', 'L', 'kg'].includes(updates.unit)) {
+      throw createError.validation('无效的计量单位');
+  }
+  
+    if (updates.unit_cost && (isNaN(updates.unit_cost) || updates.unit_cost < 0)) {
+      throw createError.validation('单位成本必须是非负数');
+  }
+  
+    // 检查名称唯一性（如果要更新名称）
+    if (updates.name && updates.name !== part.name) {
+      const existingPart = await Part.findOne({ where: { name: updates.name } });
+      if (existingPart) {
+        throw createError.conflict('配件名称已存在');
+      }
+  }
+  
+    // 更新配件信息
+    await part.update(updates);
+  
+    logger.info(`管理员更新了配件 ${partId} 的信息`);
+  
+  ctx.body = {
+    status: 'success',
+      message: '配件信息已更新',
+    data: {
+      partId,
+      updatedFields: Object.keys(updates)
+    }
+  };
+  } catch (error) {
+    if (error.status) {
+      throw error;
+  }
+    logger.error(`更新配件信息失败 (ID: ${partId}):`, error);
+    throw createError.internal('更新配件信息失败');
+  }
+};
+
+/**
+ * @swagger
+ * /api/admin/inventory/transactions:
+ *   post:
+ *     summary: 记录库存交易
+ *     description: 记录配件的入库或出库交易
+ *     tags: [Admin]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - partId
+ *               - type
+ *               - quantity
+ *               - unitCost
+ *             properties:
+ *               partId:
+ *                 type: string
+ *                 description: 配件ID
+ *               type:
+ *                 type: string
+ *                 enum: [in, out]
+ *                 description: 交易类型（入库/出库）
+ *               quantity:
+ *                 type: integer
+ *                 description: 数量
+ *               unitCost:
+ *                 type: number
+ *                 description: 单位成本
+ *               orderId:
+ *                 type: string
+ *                 description: 关联工单ID（出库时）
+ *               note:
+ *                 type: string
+ *                 description: 备注
+ *     responses:
+ *       201:
+ *         description: 创建成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器错误
+ */
+const recordTransaction = async (ctx) => {
+  const { partId, type, quantity, unitCost, orderId, note } = ctx.request.body;
+  
+  try {
+  // 验证必填字段
+    const requiredFields = ['partId', 'type', 'quantity', 'unitCost'];
+    
+    for (const field of requiredFields) {
+      if (!ctx.request.body[field]) {
+        throw createError.validation(`缺少必填字段: ${field}`);
+  }
+    }
+    
+    // 验证交易类型
+    if (!['in', 'out'].includes(type)) {
+      throw createError.validation('无效的交易类型');
+    }
+    
+    // 验证数量和成本
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      throw createError.validation('数量必须是正整数');
+  }
+  
+    if (isNaN(unitCost) || unitCost < 0) {
+      throw createError.validation('单位成本必须是非负数');
+  }
+  
+    // 检查配件是否存在
+    const part = await Part.findByPk(partId);
+  if (!part) {
+      throw createError.notFound('配件不存在');
+  }
+  
+    // 如果是出库，检查库存是否充足
+    if (type === 'out') {
+      const currentStock = await part.getCurrentStock();
+      if (currentStock < quantity) {
+        throw createError.validation(`库存不足，当前库存: ${currentStock}`);
+      }
+  }
+  
+    // 如果指定了工单ID，验证工单是否存在
+    if (orderId) {
+      const workOrder = await WorkOrder.findByPk(orderId);
+      if (!workOrder) {
+        throw createError.notFound('工单不存在');
+      }
+    }
+    
+    // 创建库存交易记录
+    const transaction = await InventoryTxn.create({
+      part_id: partId,
+      txn_type: type,
+      qty: type === 'out' ? -quantity : quantity,
+      unit_cost: unitCost,
+      total_cost: unitCost * quantity,
+      order_id: orderId || null,
+      operator_id: ctx.state.user?.id || null,
+      note: note || null
+    });
+    
+    logger.info(`管理员记录了库存交易: 配件${partId} ${type === 'in' ? '入库' : '出库'} ${quantity}`);
+  
+  ctx.status = 201;
+  ctx.body = {
+    status: 'success',
+      message: '库存交易记录成功',
+    data: {
+        transaction: {
+          id: transaction.txn_id,
+          partId: transaction.part_id,
+          type: transaction.txn_type,
+          quantity: Math.abs(transaction.qty),
+          unitCost: parseFloat(transaction.unit_cost),
+          totalCost: parseFloat(transaction.total_cost),
+          createdAt: transaction.created_at
+        }
+    }
+  };
+  } catch (error) {
+    if (error.status) {
+      throw error;
+    }
+    logger.error('记录库存交易失败:', error);
+    throw createError.internal('记录库存交易失败');
+  }
+};
+
+/**
+ * @swagger
+ * /api/admin/inventory/parts/{id}/transactions:
+ *   get:
+ *     summary: 获取配件交易历史
+ *     description: 获取指定配件的所有库存交易记录
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 配件ID
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *         default: 1
+ *         description: 页码
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *         default: 10
+ *         description: 每页记录数
  *     responses:
  *       200:
  *         description: 成功
@@ -211,612 +588,92 @@ const listParts = async (ctx) => {
  *                   example: success
  *                 data:
  *                   type: object
- *                   properties:
- *                     part:
- *                       type: object
  *       401:
  *         description: 未授权
  *       404:
- *         description: 零部件不存在
+ *         description: 配件不存在
  *       500:
  *         description: 服务器错误
  */
-const getPartDetail = async (ctx) => {
+const getPartTransactions = async (ctx) => {
   const partId = ctx.params.id;
+  const { page = 1, limit = 10 } = ctx.query;
   
-  // 从数据库获取零部件详情
-  // 实际项目中替换为数据库查询
-  const part = {
-    id: partId,
-    name: '机油滤清器',
-    code: 'OIL-FIL-001',
-    category: '滤清器',
-    brand: '博世',
-    model: 'P7100',
-    compatibleVehicles: ['丰田', '本田', '日产'],
-    description: '高品质机油滤清器，适用于多种车型，过滤效果好，使用寿命长。',
-    specifications: {
-      diameter: '68mm',
-      height: '87mm',
-      threadSize: '3/4-16 UNF'
-    },
-    unitPrice: 45.0,
-    costPrice: 30.0,
-    currentStock: 120,
-    minStock: 20,
-    maxStock: 200,
-    status: 'active',
-    location: 'A-01-02',
-    supplier: {
-      id: 'sup1',
-      name: '汽配优选',
-      contact: '张经理',
-      phone: '13988889999'
-    },
-    imageUrl: 'https://example.com/images/oil-filter.jpg',
-    stockHistory: [
-      {
-        type: 'in',
-        quantity: 50,
-        date: '2023-04-15T09:30:00Z',
-        operator: '李管理',
-        remark: '常规进货'
-      },
-      {
-        type: 'out',
-        quantity: 8,
-        date: '2023-04-20T14:15:00Z',
-        operator: '王技师',
-        workOrder: 'wo1',
-        remark: '用于车辆保养'
-      },
-      {
-        type: 'in',
-        quantity: 100,
-        date: '2023-05-10T10:45:00Z',
-        operator: '李管理',
-        remark: '批量采购'
-      },
-      {
-        type: 'out',
-        quantity: 22,
-        date: '2023-05-12T16:30:00Z',
-        operator: '赵技师',
-        workOrder: 'wo5',
-        remark: '多辆车保养'
-      }
-    ]
-  };
-  
-  // 检查零部件是否存在
-  if (!part) {
-    throw createError.notFound('零部件不存在');
-  }
-  
-  // 添加库存状态信息
-  let stockStatus = 'normal';
-  if (part.currentStock <= 0) {
-    stockStatus = 'out_of_stock';
-  } else if (part.currentStock < part.minStock) {
-    stockStatus = 'low_stock';
-  }
-  
-  logger.info(`管理员查看了零部件 ${partId} 的详细信息`);
+  try {
+    // 检查配件是否存在
+    const part = await Part.findByPk(partId);
+    if (!part) {
+      throw createError.notFound('配件不存在');
+    }
+    
+    // 获取交易历史
+    const { count, rows: transactions } = await InventoryTxn.findAndCountAll({
+      where: { part_id: partId },
+      include: [
+        {
+          model: User,
+          as: 'operator',
+          attributes: ['user_id', 'name'],
+          required: false
+        },
+        {
+          model: WorkOrder,
+          as: 'workOrder',
+          attributes: ['order_id', 'description'],
+          required: false
+        }
+      ],
+      offset: (page - 1) * limit,
+      limit: parseInt(limit),
+      order: [['created_at', 'DESC']]
+    });
+
+    // 处理数据
+    const processedTransactions = transactions.map(txn => ({
+      id: txn.txn_id,
+      type: txn.txn_type,
+      quantity: Math.abs(txn.qty),
+      unitCost: parseFloat(txn.unit_cost),
+      totalCost: parseFloat(txn.total_cost),
+      orderId: txn.order_id,
+      orderDescription: txn.workOrder?.description || null,
+      operatorId: txn.operator_id,
+      operatorName: txn.operator?.name || null,
+      note: txn.note,
+      createdAt: txn.created_at
+    }));
   
   ctx.body = {
     status: 'success',
     data: {
-      part: {
-        ...part,
-        stockStatus
-      }
-    }
-  };
-};
-
-/**
- * 创建新零部件
- * 
- * @param {Object} ctx - Koa上下文
- */
-const createPart = async (ctx) => {
-  const partData = ctx.request.body;
-  
-  // 验证必填字段
-  const requiredFields = ['name', 'code', 'category', 'brand', 'unitPrice', 'costPrice', 'minStock'];
-  
-  for (const field of requiredFields) {
-    if (!partData[field]) {
-      throw createError.validation(`缺少必填字段: ${field}`);
-    }
-  }
-  
-  // 验证价格字段
-  if (isNaN(partData.unitPrice) || partData.unitPrice <= 0) {
-    throw createError.validation('单价必须大于0');
-  }
-  
-  if (isNaN(partData.costPrice) || partData.costPrice <= 0) {
-    throw createError.validation('成本价必须大于0');
-  }
-  
-  if (isNaN(partData.minStock) || partData.minStock < 0) {
-    throw createError.validation('最小库存量不能为负数');
-  }
-  
-  // 检查零件编码是否已存在
-  // 实际项目中替换为数据库查询
-  const codeExists = false;
-  
-  if (codeExists) {
-    throw createError.conflict('零件编码已存在');
-  }
-  
-  // 创建新零部件（在数据库中）
-  // 实际项目中替换为数据库操作
-  const newPart = {
-    id: 'part' + Date.now(),
-    ...partData,
-    currentStock: partData.initialStock || 0,
-    status: 'active',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-  
-  logger.info(`管理员创建了新零部件: ${newPart.name} (${newPart.code})`);
-  
-  ctx.status = 201;
-  ctx.body = {
-    status: 'success',
-    message: '零部件创建成功',
-    data: {
-      part: newPart
-    }
-  };
-};
-
-/**
- * 更新零部件信息
- * 
- * @param {Object} ctx - Koa上下文
- */
-const updatePart = async (ctx) => {
-  const partId = ctx.params.id;
-  const updateData = ctx.request.body;
-  
-  // 获取零部件信息（从数据库）
-  // 实际项目中替换为数据库查询
-  const part = {
-    id: partId,
-    name: '机油滤清器',
-    code: 'OIL-FIL-001',
-    status: 'active'
-  };
-  
-  // 检查零部件是否存在
-  if (!part) {
-    throw createError.notFound('零部件不存在');
-  }
-  
-  // 验证更新数据
-  const allowedFields = ['name', 'category', 'brand', 'model', 'description', 'unitPrice', 'costPrice', 'minStock', 'maxStock', 'status', 'location', 'imageUrl', 'compatibleVehicles', 'specifications', 'supplier'];
-  const updates = {};
-  
-  Object.keys(updateData).forEach(key => {
-    if (allowedFields.includes(key)) {
-      updates[key] = updateData[key];
-    }
-  });
-  
-  if (Object.keys(updates).length === 0) {
-    throw createError.validation('没有提供有效的更新字段');
-  }
-  
-  // 特殊字段验证
-  if (updates.unitPrice && (isNaN(updates.unitPrice) || updates.unitPrice <= 0)) {
-    throw createError.validation('单价必须大于0');
-  }
-  
-  if (updates.costPrice && (isNaN(updates.costPrice) || updates.costPrice <= 0)) {
-    throw createError.validation('成本价必须大于0');
-  }
-  
-  if (updates.minStock && (isNaN(updates.minStock) || updates.minStock < 0)) {
-    throw createError.validation('最小库存量不能为负数');
-  }
-  
-  if (updates.status && !['active', 'inactive', 'discontinued'].includes(updates.status)) {
-    throw createError.validation('无效的状态值');
-  }
-  
-  // 更新零部件信息（在数据库中）
-  // 实际项目中替换为数据库更新操作
-  updates.updatedAt = new Date().toISOString();
-  
-  logger.info(`管理员更新了零部件 ${partId} 的信息`);
-  
-  ctx.body = {
-    status: 'success',
-    message: '零部件信息已更新',
-    data: {
-      partId,
-      updatedFields: Object.keys(updates)
-    }
-  };
-};
-
-/**
- * 删除零部件
- * 
- * @param {Object} ctx - Koa上下文
- */
-const deletePart = async (ctx) => {
-  const partId = ctx.params.id;
-  
-  // 获取零部件信息（从数据库）
-  // 实际项目中替换为数据库查询
-  const part = {
-    id: partId,
-    name: '机油滤清器',
-    currentStock: 120,
-    status: 'active'
-  };
-  
-  // 检查零部件是否存在
-  if (!part) {
-    throw createError.notFound('零部件不存在');
-  }
-  
-  // 检查是否有库存
-  if (part.currentStock > 0) {
-    throw createError.conflict('该零部件仍有库存，无法删除。请先清空库存或将状态设为停用');
-  }
-  
-  // 检查是否有关联的工单
-  // 实际项目中替换为数据库查询
-  const hasRelatedWorkOrders = false;
-  
-  if (hasRelatedWorkOrders) {
-    throw createError.conflict('该零部件有关联的工单记录，无法删除');
-  }
-  
-  // 删除零部件（在数据库中）
-  // 实际项目中替换为数据库删除操作
-  // 注意：实际应用中可能使用软删除（更新状态）而不是硬删除
-  
-  logger.info(`管理员删除了零部件 ${partId}`);
-  
-  ctx.body = {
-    status: 'success',
-    message: '零部件已删除'
-  };
-};
-
-/**
- * 入库操作
- * 
- * @param {Object} ctx - Koa上下文
- */
-const inventoryIn = async (ctx) => {
-  const { partId, quantity, supplier, purchasePrice, batchNumber, remark } = ctx.request.body;
-  
-  // 验证必填字段
-  if (!partId) {
-    throw createError.validation('缺少零部件ID');
-  }
-  
-  if (!quantity || isNaN(quantity) || quantity <= 0) {
-    throw createError.validation('数量必须大于0');
-  }
-  
-  // 获取零部件信息（从数据库）
-  // 实际项目中替换为数据库查询
-  const part = {
-    id: partId,
-    name: '机油滤清器',
-    code: 'OIL-FIL-001',
-    currentStock: 120,
-    status: 'active'
-  };
-  
-  // 检查零部件是否存在
-  if (!part) {
-    throw createError.notFound('零部件不存在');
-  }
-  
-  // 检查零部件状态
-  if (part.status !== 'active') {
-    throw createError.conflict('只能为活跃状态的零部件进行入库操作');
-  }
-  
-  // 创建入库记录（在数据库中）
-  // 实际项目中替换为数据库操作
-  const inboundRecord = {
-    id: 'in' + Date.now(),
-    partId,
-    partName: part.name,
-    partCode: part.code,
-    type: 'in',
-    quantity: parseInt(quantity),
-    previousStock: part.currentStock,
-    newStock: part.currentStock + parseInt(quantity),
-    supplier: supplier || null,
-    purchasePrice: purchasePrice || null,
-    batchNumber: batchNumber || null,
-    remark: remark || null,
-    operator: ctx.state.user.username,
-    operatorId: ctx.state.user.id,
-    createdAt: new Date().toISOString()
-  };
-  
-  // 更新零部件库存（在数据库中）
-  // 实际项目中替换为数据库更新操作
-  const updatedPart = {
-    ...part,
-    currentStock: part.currentStock + parseInt(quantity),
-    updatedAt: new Date().toISOString()
-  };
-  
-  logger.info(`管理员为零部件 ${partId} 进行了入库操作，数量: ${quantity}`);
-  
-  ctx.status = 201;
-  ctx.body = {
-    status: 'success',
-    message: '入库操作成功',
-    data: {
-      inboundRecord,
-      currentStock: updatedPart.currentStock
-    }
-  };
-};
-
-/**
- * 出库操作
- * 
- * @param {Object} ctx - Koa上下文
- */
-const inventoryOut = async (ctx) => {
-  const { partId, quantity, workOrderId, mechanicId, remark } = ctx.request.body;
-  
-  // 验证必填字段
-  if (!partId) {
-    throw createError.validation('缺少零部件ID');
-  }
-  
-  if (!quantity || isNaN(quantity) || quantity <= 0) {
-    throw createError.validation('数量必须大于0');
-  }
-  
-  // 获取零部件信息（从数据库）
-  // 实际项目中替换为数据库查询
-  const part = {
-    id: partId,
-    name: '机油滤清器',
-    code: 'OIL-FIL-001',
-    currentStock: 120,
-    status: 'active'
-  };
-  
-  // 检查零部件是否存在
-  if (!part) {
-    throw createError.notFound('零部件不存在');
-  }
-  
-  // 检查库存是否充足
-  if (part.currentStock < quantity) {
-    throw createError.conflict(`库存不足，当前库存: ${part.currentStock}，请求数量: ${quantity}`);
-  }
-  
-  // 创建出库记录（在数据库中）
-  // 实际项目中替换为数据库操作
-  const outboundRecord = {
-    id: 'out' + Date.now(),
-    partId,
-    partName: part.name,
-    partCode: part.code,
-    type: 'out',
-    quantity: parseInt(quantity),
-    previousStock: part.currentStock,
-    newStock: part.currentStock - parseInt(quantity),
-    workOrderId: workOrderId || null,
-    mechanicId: mechanicId || null,
-    remark: remark || null,
-    operator: ctx.state.user.username,
-    operatorId: ctx.state.user.id,
-    createdAt: new Date().toISOString()
-  };
-  
-  // 更新零部件库存（在数据库中）
-  // 实际项目中替换为数据库更新操作
-  const updatedPart = {
-    ...part,
-    currentStock: part.currentStock - parseInt(quantity),
-    updatedAt: new Date().toISOString()
-  };
-  
-  // 如果库存低于最小库存，发出警告
-  let stockWarning = null;
-  if (updatedPart.currentStock <= 0) {
-    stockWarning = '该零部件库存已耗尽，请尽快补充';
-  } else if (updatedPart.currentStock < part.minStock) {
-    stockWarning = `该零部件库存低于最小库存(${part.minStock})，请考虑补充`;
-  }
-  
-  logger.info(`管理员为零部件 ${partId} 进行了出库操作，数量: ${quantity}`);
-  
-  ctx.status = 201;
-  ctx.body = {
-    status: 'success',
-    message: '出库操作成功',
-    data: {
-      outboundRecord,
-      currentStock: updatedPart.currentStock,
-      stockWarning
-    }
-  };
-};
-
-/**
- * 获取库存交易记录
- * 
- * @param {Object} ctx - Koa上下文
- */
-const getInventoryTransactions = async (ctx) => {
-  const { page = 1, limit = 10, type, partId, startDate, endDate, operator } = ctx.query;
-  
-  // 构建查询条件
-  const query = {};
-  if (type) {
-    query.type = type;
-  }
-  
-  if (partId) {
-    query.partId = partId;
-  }
-  
-  if (startDate) {
-    query.startDate = startDate;
-  }
-  
-  if (endDate) {
-    query.endDate = endDate;
-  }
-  
-  if (operator) {
-    query.operator = operator;
-  }
-  
-  // 从数据库获取交易记录
-  // 实际项目中替换为数据库查询
-  const transactions = [
-    {
-      id: 'in1',
-      partId: 'part1',
-      partName: '机油滤清器',
-      partCode: 'OIL-FIL-001',
-      type: 'in',
-      quantity: 50,
-      previousStock: 70,
-      newStock: 120,
-      supplier: '汽配优选',
-      purchasePrice: 28.5,
-      batchNumber: 'B2023051001',
-      remark: '常规进货',
-      operator: '李管理',
-      operatorId: 'user5',
-      createdAt: '2023-05-10T10:45:00Z'
-    },
-    {
-      id: 'out1',
-      partId: 'part1',
-      partName: '机油滤清器',
-      partCode: 'OIL-FIL-001',
-      type: 'out',
-      quantity: 5,
-      previousStock: 125,
-      newStock: 120,
-      workOrderId: 'wo5',
-      mechanicId: 'mech2',
-      remark: '用于车辆保养',
-      operator: '李管理',
-      operatorId: 'user5',
-      createdAt: '2023-05-12T16:30:00Z'
-    },
-    {
-      id: 'in2',
-      partId: 'part2',
-      partName: '火花塞',
-      partCode: 'SPARK-001',
-      type: 'in',
-      quantity: 100,
-      previousStock: 20,
-      newStock: 120,
-      supplier: '火花电子',
-      purchasePrice: 20.0,
-      batchNumber: 'B2023050501',
-      remark: '批量采购',
-      operator: '王管理',
-      operatorId: 'user6',
-      createdAt: '2023-05-05T09:20:00Z'
-    },
-    {
-      id: 'out2',
-      partId: 'part2',
-      partName: '火花塞',
-      partCode: 'SPARK-001',
-      type: 'out',
-      quantity: 40,
-      previousStock: 120,
-      newStock: 80,
-      workOrderId: 'wo3',
-      mechanicId: 'mech1',
-      remark: '多辆车更换火花塞',
-      operator: '王管理',
-      operatorId: 'user6',
-      createdAt: '2023-05-06T14:15:00Z'
-    }
-  ];
-  
-  // 应用筛选条件
-  let filteredTransactions = transactions;
-  
-  if (query.type) {
-    filteredTransactions = filteredTransactions.filter(t => t.type === query.type);
-  }
-  
-  if (query.partId) {
-    filteredTransactions = filteredTransactions.filter(t => t.partId === query.partId);
-  }
-  
-  if (query.startDate) {
-    const startDateObj = new Date(query.startDate);
-    filteredTransactions = filteredTransactions.filter(t => new Date(t.createdAt) >= startDateObj);
-  }
-  
-  if (query.endDate) {
-    const endDateObj = new Date(query.endDate);
-    filteredTransactions = filteredTransactions.filter(t => new Date(t.createdAt) <= endDateObj);
-  }
-  
-  if (query.operator) {
-    filteredTransactions = filteredTransactions.filter(t => t.operator.includes(query.operator));
-  }
-  
-  // 计算总数量
-  const total = filteredTransactions.length;
-  
-  // 统计信息
-  const summary = {
-    totalInQuantity: filteredTransactions.filter(t => t.type === 'in').reduce((sum, t) => sum + t.quantity, 0),
-    totalOutQuantity: filteredTransactions.filter(t => t.type === 'out').reduce((sum, t) => sum + t.quantity, 0),
-    totalInTransactions: filteredTransactions.filter(t => t.type === 'in').length,
-    totalOutTransactions: filteredTransactions.filter(t => t.type === 'out').length
-  };
-  
-  logger.info(`管理员查询了库存交易记录，返回 ${filteredTransactions.length} 条记录`);
-  
-  ctx.body = {
-    status: 'success',
-    data: {
-      transactions: filteredTransactions,
-      summary,
+        part: {
+          id: part.part_id,
+          name: part.name,
+          unit: part.unit,
+          unitCost: parseFloat(part.unit_cost)
+        },
+        transactions: processedTransactions,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / parseInt(limit))
+          total: count,
+          pages: Math.ceil(count / parseInt(limit))
+        }
       }
+    };
+  } catch (error) {
+    if (error.status) {
+      throw error;
     }
-  };
+    logger.error(`获取配件交易历史失败 (ID: ${partId}):`, error);
+    throw createError.internal('获取配件交易历史失败');
+  }
 };
 
 module.exports = {
-  listParts,
-  getPartDetail,
-  createPart,
+  getInventoryList,
+  addPart,
   updatePart,
-  deletePart,
-  inventoryIn,
-  inventoryOut,
-  getInventoryTransactions
+  recordTransaction,
+  getPartTransactions
 };

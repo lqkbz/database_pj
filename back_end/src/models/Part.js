@@ -12,82 +12,175 @@
  * - name: VARCHAR, 配件名称
  * - unit: ENUM('pcs','L','kg'), 计量单位
  * - unit_cost: DECIMAL(10,2), 单位成本
+ * - qty: INT, 库存数量
  * 
  * 关联关系：
  * - 一个配件可以用于多个工单
  * - 一个配件可以有多条库存交易记录
  */
 
-class Part {
-  constructor(db) {
-    this.db = db;
-    this.tableName = 'parts';
-  }
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     Part:
+ *       type: object
+ *       properties:
+ *         part_id:
+ *           type: integer
+ *           description: 配件唯一标识符
+ *         name:
+ *           type: string
+ *           description: 配件名称
+ *         unit:
+ *           type: string
+ *           enum: [pcs, L, kg]
+ *           description: 计量单位
+ *         unit_cost:
+ *           type: number
+ *           format: decimal
+ *           description: 单位成本
+ *         qty:
+ *           type: integer
+ *           description: 库存数量
+ */
 
-  // 创建配件表
-  async createTable() {
-    const sql = `
-      CREATE TABLE IF NOT EXISTS ${this.tableName} (
-        part_id BIGINT PRIMARY KEY AUTO_INCREMENT,
-        name VARCHAR(200) NOT NULL,
-        unit ENUM('pcs','L','kg') NOT NULL,
-        unit_cost DECIMAL(10,2) NOT NULL,
-        description TEXT,
-        category VARCHAR(50),
-        stock_quantity INT DEFAULT 0,
-        min_stock INT DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        INDEX idx_name (name),
-        INDEX idx_category (category)
-      )`;
-    // 执行SQL创建表
-  }
+const { DataTypes } = require('sequelize');
 
-  // 创建新配件
-  async create(partData) {
-    // 插入配件基本信息
-  }
+module.exports = (sequelize) => {
+  const Part = sequelize.define('Part', {
+    part_id: {
+      type: DataTypes.BIGINT,
+      primaryKey: true,
+      autoIncrement: true,
+      field: 'part_id'
+    },
+    name: {
+      type: DataTypes.STRING,
+      field: 'name'
+    },
+    unit: {
+      type: DataTypes.ENUM('pcs', 'L', 'kg'),
+      field: 'unit'
+    },
+    unit_cost: {
+      type: DataTypes.DECIMAL(10, 2),
+      field: 'unit_cost'
+    },
+    qty: {
+      type: DataTypes.INTEGER,
+      defaultValue: 0,
+      field: 'qty'
+    }
+  }, {
+    tableName: 'parts',
+    timestamps: false,
+    indexes: [
+      {
+        fields: ['name']
+      }
+    ]
+  });
 
-  // 根据ID查找配件
-  async findById(partId) {
-    // 返回配件详细信息
-  }
+  // 实例方法：获取当前库存（从qty字段）
+  Part.prototype.getCurrentStock = function() {
+    return this.qty || 0;
+  };
 
-  // 搜索配件
-  async search(keyword, category) {
-    // 根据名称或类别搜索配件
-  }
+  // 实例方法：更新库存数量
+  Part.prototype.updateStock = async function(quantity) {
+    this.qty = quantity;
+    return await this.save();
+  };
 
-  // 更新配件信息
-  async update(partId, updateData) {
-    // 更新配件基本信息（不包括库存）
-  }
+  // 实例方法：增加库存
+  Part.prototype.addStock = async function(quantity) {
+    this.qty = (this.qty || 0) + quantity;
+    return await this.save();
+  };
 
-  // 获取库存信息
-  async getStock(partId) {
-    // 返回当前库存数量和价值
-  }
+  // 实例方法：减少库存
+  Part.prototype.reduceStock = async function(quantity) {
+    if ((this.qty || 0) < quantity) {
+      throw new Error(`库存不足，当前库存：${this.qty}，需要：${quantity}`);
+    }
+    this.qty = (this.qty || 0) - quantity;
+    return await this.save();
+  };
 
-  // 获取低库存配件
-  async getLowStockParts() {
-    // 返回库存低于最小库存的配件
-  }
+  // 实例方法：获取使用历史
+  Part.prototype.getUsageHistory = async function(startDate, endDate) {
+    const models = sequelize.models;
+    return await models.WorkOrderMaterial.findAll({
+      where: {
+        part_id: this.part_id,
+        ...(startDate && endDate && {
+          created_at: {
+            [sequelize.Sequelize.Op.between]: [startDate, endDate]
+          }
+        })
+      },
+      include: [{
+        model: models.WorkOrder,
+        as: 'workOrder',
+        attributes: ['order_id', 'description', 'created_at']
+      }],
+      order: [['created_at', 'DESC']]
+    });
+  };
 
-  // 获取配件使用历史
-  async getUsageHistory(partId, dateRange) {
-    // 返回配件在工单中的使用记录
-  }
+  // 实例方法：获取库存交易历史
+  Part.prototype.getInventoryHistory = async function(startDate, endDate) {
+    const models = sequelize.models;
+    return await models.InventoryTxn.findAll({
+      where: {
+        part_id: this.part_id,
+        ...(startDate && endDate && {
+          created_at: {
+            [sequelize.Sequelize.Op.between]: [startDate, endDate]
+          }
+        })
+      },
+      order: [['created_at', 'DESC']]
+    });
+  };
 
-  // 获取配件价格历史
-  async getPriceHistory(partId) {
-    // 返回配件成本价格变化历史
-  }
+  // 类方法：搜索配件
+  Part.search = async function(keyword) {
+    return await Part.findAll({
+      where: {
+        name: {
+          [sequelize.Sequelize.Op.like]: `%${keyword}%`
+        }
+      }
+    });
+  };
 
-  // 批量更新配件价格
-  async batchUpdatePrices(priceUpdates) {
-    // 批量更新多个配件的价格
-  }
-}
+  // 类方法：获取库存不足的配件
+  Part.getLowStockParts = async function(threshold = 10) {
+    return await Part.findAll({
+      where: {
+        qty: {
+          [sequelize.Sequelize.Op.lt]: threshold
+        }
+      }
+    });
+  };
 
-module.exports = Part; 
+  // 定义关联关系
+  Part.associate = function(models) {
+    // 配件有多个库存交易记录
+    Part.hasMany(models.InventoryTxn, {
+      foreignKey: 'part_id',
+      as: 'inventoryTransactions'
+    });
+
+    // 配件用于多个工单
+    Part.hasMany(models.WorkOrderMaterial, {
+      foreignKey: 'part_id',
+      as: 'workOrderMaterials'
+    });
+  };
+
+  return Part;
+}; 

@@ -1,6 +1,9 @@
+const { createError } = require('../../middleware/errorhandler');
 const { createLogger } = require('../../middleware/logger');
+const { WorkOrder, WorkOrderMechanic, MechanicProfile, User } = require('../../models');
+const { Op } = require('sequelize');
 
-const logger = createLogger('AdminReports');
+const logger = createLogger('AdminWorkload');
 
 /**
  * @swagger
@@ -55,16 +58,12 @@ const logger = createLogger('AdminReports');
  *                       type: number
  *                     inProgressOrders:
  *                       type: number
- *                     workloadByTradeType:
+ *                     workloadByTrade:
  *                       type: array
  *                     mechanicSpecialties:
  *                       type: array
  *                     capacityUtilization:
  *                       type: array
- *                     highDemandSkills:
- *                       type: array
- *                     schedulingEfficiency:
- *                       type: object
  *                     workloadTrend:
  *                       type: array
  *       400:
@@ -77,101 +76,228 @@ const logger = createLogger('AdminReports');
 const getTradeWorkloadStats = async (ctx) => {
   const { timeRange = 'month', startDate, endDate } = ctx.query;
   
-  // 构建查询条件
-  const query = { timeRange };
-  
-  if (startDate) {
-    query.startDate = startDate;
-  }
-  
-  if (endDate) {
-    query.endDate = endDate;
-  }
-  
-  // 从数据库获取统计数据
-  // 实际项目中替换为数据库聚合查询
-  
-  // 工种工作量统计
-  const tradeWorkloadStats = {
-    timeRange: query.timeRange,
-    startDate: query.startDate || '2023-01-01',
-    endDate: query.endDate || '2023-05-31',
-    totalOrders: 248,
-    completedOrders: 216,
-    inProgressOrders: 32,
-    workloadByTradeType: [
-      { tradeType: '发动机维修', count: 58, percentage: 23.39, avgTime: '4.5小时' },
-      { tradeType: '常规保养', count: 78, percentage: 31.45, avgTime: '1.8小时' },
-      { tradeType: '电子系统', count: 42, percentage: 16.94, avgTime: '3.2小时' },
-      { tradeType: '底盘调校', count: 36, percentage: 14.52, avgTime: '2.5小时' },
-      { tradeType: '变速箱维修', count: 21, percentage: 8.47, avgTime: '5.2小时' },
-      { tradeType: '其他维修', count: 13, percentage: 5.24, avgTime: '2.8小时' }
-    ],
-    mechanicSpecialties: [
-      { 
-        mechanicId: 'mech1', 
-        name: '李师傅', 
-        specialties: ['发动机维修', '电子系统', '底盘调校'], 
-        orderCount: 55,
-        ordersByType: [
-          { type: '发动机维修', count: 22 },
-          { type: '电子系统', count: 18 },
-          { type: '底盘调校', count: 15 }
-        ]
-      },
-      { 
-        mechanicId: 'mech2', 
-        name: '王师傅', 
-        specialties: ['钣金喷漆', '车身维修', '空调系统'], 
-        orderCount: 42,
-        ordersByType: [
-          { type: '钣金喷漆', count: 18 },
-          { type: '车身维修', count: 14 },
-          { type: '空调系统', count: 10 }
-        ]
-      },
-      { 
-        mechanicId: 'mech3', 
-        name: '张师傅', 
-        specialties: ['变速箱维修', '离合器更换', '悬挂系统'], 
-        orderCount: 38,
-        ordersByType: [
-          { type: '变速箱维修', count: 16 },
-          { type: '离合器更换', count: 14 },
-          { type: '悬挂系统', count: 8 }
-        ]
+  try {
+    // 构建日期范围
+    let dateFilter = {};
+    if (startDate && endDate) {
+      dateFilter = {
+        created_at: {
+          [Op.between]: [new Date(startDate), new Date(endDate)]
+        }
+      };
+    } else {
+      // 默认最近一个月
+      const now = new Date();
+      const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+      dateFilter = {
+        created_at: {
+          [Op.between]: [oneMonthAgo, now]
+        }
+      };
+    }
+
+    // 获取该时间段内的工单
+    const workOrders = await WorkOrder.findAll({
+      where: dateFilter,
+      include: [
+        {
+          model: WorkOrderMechanic,
+          as: 'mechanics',
+          include: [
+            {
+              model: MechanicProfile,
+              as: 'mechanic',
+              include: [
+                {
+                  model: User,
+                  as: 'user',
+                  attributes: ['user_id', 'name']
+                }
+              ]
+            }
+          ],
+          required: false
+        }
+      ],
+      attributes: ['order_id', 'status', 'description', 'created_at', 'finished_at']
+    });
+
+    // 基本统计
+    const totalOrders = workOrders.length;
+    const completedOrders = workOrders.filter(order => order.status === 'done').length;
+    const inProgressOrders = workOrders.filter(order => order.status === 'in_progress').length;
+
+    // 按工种统计工单
+    const tradeStats = {};
+    const mechanicWorkStats = {};
+
+    workOrders.forEach(order => {
+      if (order.mechanics && order.mechanics.length > 0) {
+        order.mechanics.forEach(mechanic => {
+          const trade = mechanic.mechanic.trade;
+          const mechanicId = mechanic.mechanic.user.user_id;
+          const mechanicName = mechanic.mechanic.user.name;
+          
+          // 工种统计
+          if (!tradeStats[trade]) {
+            tradeStats[trade] = {
+              count: 0,
+              totalHours: 0,
+              completedCount: 0
+            };
+          }
+          
+          tradeStats[trade].count++;
+          tradeStats[trade].totalHours += parseFloat(mechanic.hours_worked || 0);
+          
+          if (order.status === 'done') {
+            tradeStats[trade].completedCount++;
+          }
+          
+          // 技师工作统计
+          if (!mechanicWorkStats[mechanicId]) {
+            mechanicWorkStats[mechanicId] = {
+              mechanicId,
+              name: mechanicName,
+              trade,
+              orderCount: 0,
+              completedCount: 0,
+              totalHours: 0,
+              ordersByType: {}
+            };
+          }
+          
+          mechanicWorkStats[mechanicId].orderCount++;
+          mechanicWorkStats[mechanicId].totalHours += parseFloat(mechanic.hours_worked || 0);
+          
+          if (order.status === 'done') {
+            mechanicWorkStats[mechanicId].completedCount++;
+          }
+          
+          // 按工单描述分类统计
+          const description = order.description.toLowerCase();
+          let orderType = '其他维修';
+          
+          if (description.includes('机油') || description.includes('保养')) {
+            orderType = '常规保养';
+          } else if (description.includes('发动机') || description.includes('引擎')) {
+            orderType = '发动机维修';
+          } else if (description.includes('电子') || description.includes('电路')) {
+            orderType = '电子系统';
+          } else if (description.includes('底盘') || description.includes('悬挂')) {
+            orderType = '底盘调校';
+          } else if (description.includes('变速箱')) {
+            orderType = '变速箱维修';
+          }
+          
+          if (!mechanicWorkStats[mechanicId].ordersByType[orderType]) {
+            mechanicWorkStats[mechanicId].ordersByType[orderType] = 0;
+          }
+          mechanicWorkStats[mechanicId].ordersByType[orderType]++;
+        });
       }
-    ],
-    capacityUtilization: [
-      { mechanicId: 'mech1', name: '李师傅', capacity: 60, utilization: 91.67 },
-      { mechanicId: 'mech2', name: '王师傅', capacity: 55, utilization: 76.36 },
-      { mechanicId: 'mech3', name: '张师傅', capacity: 55, utilization: 69.09 },
-      { mechanicId: 'mech4', name: '赵师傅', capacity: 50, utilization: 82.00 },
-      { mechanicId: 'mech5', name: '刘师傅', capacity: 50, utilization: 86.00 }
-    ],
-    highDemandSkills: [
-      { skill: '电子系统诊断', demandScore: 8.7, availableMechanics: 2 },
-      { skill: '混合动力系统维修', demandScore: 8.3, availableMechanics: 1 },
-      { skill: '自动变速箱维修', demandScore: 7.9, availableMechanics: 2 },
-      { skill: '涡轮增压器维修', demandScore: 7.6, availableMechanics: 1 }
-    ],
-    schedulingEfficiency: {
-      averageWaitTime: '1.8天',
-      reschedulingRate: 12.5,
-      idleTimePercentage: 8.3,
-      peakHours: ['上午9点-11点', '下午2点-4点'],
-      recommendedHiring: [
-        { specialty: '电子系统诊断', count: 1 },
-        { specialty: '混合动力系统维修', count: 1 }
+    });
+
+    // 工种工作量分布
+    const workloadByTrade = Object.entries(tradeStats).map(([trade, stats]) => ({
+      tradeType: trade,
+      count: stats.count,
+      percentage: totalOrders > 0 ? parseFloat((stats.count / totalOrders * 100).toFixed(2)) : 0,
+      avgTime: stats.count > 0 ? `${(stats.totalHours / stats.count).toFixed(1)}小时` : '0小时'
+    }));
+
+    // 技师专业分工
+    const mechanicSpecialties = Object.values(mechanicWorkStats)
+      .filter(mechanic => mechanic.orderCount > 0)
+      .map(mechanic => ({
+        mechanicId: mechanic.mechanicId,
+        name: mechanic.name,
+        specialties: [mechanic.trade],
+        orderCount: mechanic.orderCount,
+        completedCount: mechanic.completedCount,
+        totalHours: parseFloat(mechanic.totalHours.toFixed(1)),
+        ordersByType: Object.entries(mechanic.ordersByType).map(([type, count]) => ({
+          type,
+          count
+        }))
+      }));
+
+    // 获取所有技师用于计算容量利用率
+    const allMechanics = await User.findAll({
+      where: { role: 'mechanic' },
+      include: [
+        {
+          model: MechanicProfile,
+          as: 'mechanicProfile',
+          required: true
+        }
       ]
-    },
-    workloadTrend: [
-      { month: '1月', count: 32, utilization: 68.5 },
-      { month: '2月', count: 37, utilization: 72.3 },
-      { month: '3月', count: 45, utilization: 78.6 },
-      { month: '4月', count: 64, utilization: 86.2 },
-      { month: '5月', count: 70, utilization: 89.7 }
-    ]
+    });
+
+    // 容量利用率（假设每个技师月工作能力为160小时）
+    const monthlyCapacity = 160;
+    const capacityUtilization = allMechanics.map(mechanic => {
+      const mechanicId = mechanic.user_id;
+      const workStats = mechanicWorkStats[mechanicId];
+      const actualHours = workStats ? workStats.totalHours : 0;
+      const utilization = (actualHours / monthlyCapacity * 100).toFixed(2);
+      
+      return {
+        mechanicId,
+        name: mechanic.name,
+        capacity: monthlyCapacity,
+        actualHours: parseFloat(actualHours.toFixed(1)),
+        utilization: parseFloat(utilization)
+      };
+    });
+
+    // 工作量趋势分析（按月统计）
+    const monthlyWorkload = {};
+    workOrders.forEach(order => {
+      const monthKey = new Date(order.created_at).toISOString().slice(0, 7); // YYYY-MM
+      
+      if (!monthlyWorkload[monthKey]) {
+        monthlyWorkload[monthKey] = {
+          count: 0,
+          totalHours: 0
+        };
+      }
+      
+      monthlyWorkload[monthKey].count++;
+      
+      if (order.mechanics && order.mechanics.length > 0) {
+        order.mechanics.forEach(mechanic => {
+          monthlyWorkload[monthKey].totalHours += parseFloat(mechanic.hours_worked || 0);
+        });
+      }
+    });
+
+    const workloadTrend = Object.entries(monthlyWorkload)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, stats]) => {
+        const totalMechanics = allMechanics.length;
+        const monthlyTotalCapacity = totalMechanics * monthlyCapacity;
+        const utilization = monthlyTotalCapacity > 0 ? (stats.totalHours / monthlyTotalCapacity * 100) : 0;
+        
+        return {
+          month: new Date(month + '-01').toLocaleDateString('zh-CN', { month: 'long' }),
+          count: stats.count,
+          utilization: parseFloat(utilization.toFixed(1))
+        };
+      });
+
+    // 工种工作量统计
+    const tradeWorkloadStats = {
+      timeRange,
+      startDate: startDate || new Date(new Date().getFullYear(), new Date().getMonth() - 1, new Date().getDate()).toISOString().split('T')[0],
+      endDate: endDate || new Date().toISOString().split('T')[0],
+      totalOrders,
+      completedOrders,
+      inProgressOrders,
+      workloadByTrade,
+      mechanicSpecialties,
+      capacityUtilization,
+      workloadTrend
   };
   
   logger.info(`管理员查询了工种工作量统计报表`);
@@ -180,6 +306,10 @@ const getTradeWorkloadStats = async (ctx) => {
     status: 'success',
     data: tradeWorkloadStats
   };
+  } catch (error) {
+    logger.error('获取工种工作量统计失败:', error);
+    throw createError.internal('获取工种工作量统计失败');
+  }
 };
 
 module.exports = {

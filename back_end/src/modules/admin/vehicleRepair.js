@@ -1,6 +1,9 @@
+const { createError } = require('../../middleware/errorhandler');
 const { createLogger } = require('../../middleware/logger');
+const { Vehicle, WorkOrder, User } = require('../../models');
+const { Op } = require('sequelize');
 
-const logger = createLogger('AdminReports');
+const logger = createLogger('AdminVehicleRepair');
 
 /**
  * @swagger
@@ -80,75 +83,263 @@ const logger = createLogger('AdminReports');
 const getVehicleRepairStats = async (ctx) => {
   const { timeRange = 'month', startDate, endDate, make } = ctx.query;
   
-  // 构建查询条件
-  const query = { timeRange };
-  
-  if (startDate) {
-    query.startDate = startDate;
-  }
-  
-  if (endDate) {
-    query.endDate = endDate;
-  }
-  
-  if (make) {
-    query.make = make;
-  }
-  
-  // 从数据库获取统计数据
-  // 实际项目中替换为数据库聚合查询
-  
-  // 车辆维修频率统计
-  const vehicleRepairStats = {
-    timeRange: query.timeRange,
-    startDate: query.startDate || '2023-01-01',
-    endDate: query.endDate || '2023-05-31',
-    totalRepairs: 248,
-    vehicleCount: 156,
-    averageRepairsPerVehicle: 1.59,
-    repairsByMake: [
-      { make: '丰田', count: 67, percentage: 27.02 },
-      { make: '本田', count: 52, percentage: 20.97 },
-      { make: '大众', count: 43, percentage: 17.34 },
-      { make: '日产', count: 29, percentage: 11.69 },
-      { make: '奔驰', count: 21, percentage: 8.47 },
-      { make: '宝马', count: 18, percentage: 7.26 },
-      { make: '其他', count: 18, percentage: 7.26 }
-    ],
-    repairsByVehicleAge: [
-      { ageRange: '0-3年', count: 42, percentage: 16.94 },
-      { ageRange: '3-5年', count: 73, percentage: 29.44 },
-      { ageRange: '5-8年', count: 88, percentage: 35.48 },
-      { ageRange: '8年以上', count: 45, percentage: 18.15 }
-    ],
-    mostCommonIssues: [
-      { issue: '更换机油和滤清器', count: 112, percentage: 45.16 },
-      { issue: '刹车系统维修', count: 58, percentage: 23.39 },
-      { issue: '发动机故障检修', count: 43, percentage: 17.34 },
-      { issue: '空调系统维修', count: 21, percentage: 8.47 },
-      { issue: '变速箱维修', count: 14, percentage: 5.65 }
-    ],
-    repairTrend: [
-      { month: '1月', count: 32 },
-      { month: '2月', count: 37 },
-      { month: '3月', count: 45 },
-      { month: '4月', count: 64 },
-      { month: '5月', count: 70 }
-    ],
-    seasonalFactors: {
-      winter: { percentage: 22.58, commonIssues: ['电池故障', '暖风系统'] },
-      spring: { percentage: 23.79, commonIssues: ['空调系统', '雨刮器'] },
-      summer: { percentage: 28.63, commonIssues: ['空调系统', '冷却系统'] },
-      autumn: { percentage: 25.00, commonIssues: ['照明系统', '暖风系统'] }
+  try {
+    // 构建日期范围
+    let dateFilter = {};
+    if (startDate && endDate) {
+      dateFilter = {
+        created_at: {
+          [Op.between]: [new Date(startDate), new Date(endDate)]
+        }
+      };
+    } else {
+      // 默认最近一个月
+      const now = new Date();
+      const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+      dateFilter = {
+        created_at: {
+          [Op.between]: [oneMonthAgo, now]
+        }
+      };
     }
-  };
-  
-  logger.info(`管理员查询了车辆维修统计报表`);
-  
-  ctx.body = {
-    status: 'success',
-    data: vehicleRepairStats
-  };
+
+    // 构建车辆查询条件
+    let vehicleWhereClause = {};
+    if (make) {
+      vehicleWhereClause.make = { [Op.like]: `%${make}%` };
+    }
+
+    // 获取维修记录（已完成的工单）
+    const repairOrders = await WorkOrder.findAll({
+      where: {
+        ...dateFilter,
+        status: 'done'
+      },
+      include: [
+        {
+          model: Vehicle,
+          as: 'vehicle',
+          where: vehicleWhereClause,
+          attributes: ['vehicle_id', 'make', 'model', 'year', 'plate_no'],
+          include: [
+            {
+              model: User,
+              as: 'owner',
+              attributes: ['user_id', 'name']
+            }
+          ],
+          required: true
+        }
+      ],
+      attributes: ['order_id', 'description', 'created_at', 'finished_at']
+    });
+
+    // 基本统计
+    const totalRepairs = repairOrders.length;
+    
+    // 统计涉及的车辆数量
+    const uniqueVehicles = new Set(repairOrders.map(order => order.vehicle.vehicle_id));
+    const vehicleCount = uniqueVehicles.size;
+    
+    const averageRepairsPerVehicle = vehicleCount > 0 ? (totalRepairs / vehicleCount) : 0;
+
+    // 按品牌统计维修次数
+    const makeStats = {};
+    repairOrders.forEach(order => {
+      const vehicleMake = order.vehicle.make;
+      if (!makeStats[vehicleMake]) {
+        makeStats[vehicleMake] = 0;
+      }
+      makeStats[vehicleMake]++;
+    });
+
+    const repairsByMake = Object.entries(makeStats)
+      .map(([make, count]) => ({
+        make,
+        count,
+        percentage: totalRepairs > 0 ? parseFloat((count / totalRepairs * 100).toFixed(2)) : 0
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    // 按车龄统计维修次数
+    const currentYear = new Date().getFullYear();
+    const ageStats = {
+      '0-3年': 0,
+      '3-5年': 0,
+      '5-8年': 0,
+      '8年以上': 0
+    };
+
+    repairOrders.forEach(order => {
+      const vehicleAge = currentYear - order.vehicle.year;
+      let ageRange;
+      
+      if (vehicleAge <= 3) {
+        ageRange = '0-3年';
+      } else if (vehicleAge <= 5) {
+        ageRange = '3-5年';
+      } else if (vehicleAge <= 8) {
+        ageRange = '5-8年';
+      } else {
+        ageRange = '8年以上';
+      }
+      
+      ageStats[ageRange]++;
+    });
+
+    const repairsByVehicleAge = Object.entries(ageStats).map(([ageRange, count]) => ({
+      ageRange,
+      count,
+      percentage: totalRepairs > 0 ? parseFloat((count / totalRepairs * 100).toFixed(2)) : 0
+    }));
+
+    // 分析常见故障（基于工单描述）
+    const issueStats = {};
+    repairOrders.forEach(order => {
+      const description = order.description.toLowerCase();
+      let issue = '其他维修';
+      
+      if (description.includes('机油') || description.includes('滤清器') || description.includes('保养')) {
+        issue = '更换机油和滤清器';
+      } else if (description.includes('刹车') || description.includes('制动')) {
+        issue = '刹车系统维修';
+      } else if (description.includes('发动机') || description.includes('引擎')) {
+        issue = '发动机故障检修';
+      } else if (description.includes('空调') || description.includes('制冷')) {
+        issue = '空调系统维修';
+      } else if (description.includes('变速箱')) {
+        issue = '变速箱维修';
+      } else if (description.includes('电子') || description.includes('电路')) {
+        issue = '电子系统故障';
+      } else if (description.includes('轮胎')) {
+        issue = '轮胎更换';
+      }
+      
+      if (!issueStats[issue]) {
+        issueStats[issue] = 0;
+      }
+      issueStats[issue]++;
+    });
+
+    const mostCommonIssues = Object.entries(issueStats)
+      .map(([issue, count]) => ({
+        issue,
+        count,
+        percentage: totalRepairs > 0 ? parseFloat((count / totalRepairs * 100).toFixed(2)) : 0
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    // 维修趋势分析（按月统计）
+    const monthlyRepairs = {};
+    repairOrders.forEach(order => {
+      const monthKey = new Date(order.created_at).toISOString().slice(0, 7); // YYYY-MM
+      if (!monthlyRepairs[monthKey]) {
+        monthlyRepairs[monthKey] = 0;
+      }
+      monthlyRepairs[monthKey]++;
+    });
+
+    const repairTrend = Object.entries(monthlyRepairs)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, count]) => ({
+        month: new Date(month + '-01').toLocaleDateString('zh-CN', { month: 'long' }),
+        count
+      }));
+
+    // 季节性因素分析
+    const seasonalStats = {
+      winter: { count: 0, issues: {} },  // 12, 1, 2月
+      spring: { count: 0, issues: {} },  // 3, 4, 5月
+      summer: { count: 0, issues: {} },  // 6, 7, 8月
+      autumn: { count: 0, issues: {} }   // 9, 10, 11月
+    };
+
+    repairOrders.forEach(order => {
+      const month = new Date(order.created_at).getMonth() + 1;
+      let season;
+      
+      if (month === 12 || month <= 2) {
+        season = 'winter';
+      } else if (month <= 5) {
+        season = 'spring';
+      } else if (month <= 8) {
+        season = 'summer';
+      } else {
+        season = 'autumn';
+      }
+      
+      seasonalStats[season].count++;
+      
+      // 分析季节性故障
+      const description = order.description.toLowerCase();
+      let seasonalIssue = '其他';
+      
+      if (description.includes('电池') || description.includes('启动')) {
+        seasonalIssue = '电池故障';
+      } else if (description.includes('空调') || description.includes('制冷')) {
+        seasonalIssue = '空调系统';
+      } else if (description.includes('暖风') || description.includes('加热')) {
+        seasonalIssue = '暖风系统';
+      } else if (description.includes('雨刮') || description.includes('雨刷')) {
+        seasonalIssue = '雨刮器';
+      } else if (description.includes('冷却') || description.includes('散热')) {
+        seasonalIssue = '冷却系统';
+      } else if (description.includes('照明') || description.includes('灯')) {
+        seasonalIssue = '照明系统';
+      }
+      
+      if (!seasonalStats[season].issues[seasonalIssue]) {
+        seasonalStats[season].issues[seasonalIssue] = 0;
+      }
+      seasonalStats[season].issues[seasonalIssue]++;
+    });
+
+    const seasonalFactors = {};
+    Object.entries(seasonalStats).forEach(([season, stats]) => {
+      const seasonNames = {
+        winter: '冬季',
+        spring: '春季', 
+        summer: '夏季',
+        autumn: '秋季'
+      };
+      
+      const topIssues = Object.entries(stats.issues)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 2)
+        .map(([issue]) => issue);
+      
+      seasonalFactors[seasonNames[season]] = {
+        percentage: totalRepairs > 0 ? parseFloat((stats.count / totalRepairs * 100).toFixed(2)) : 0,
+        commonIssues: topIssues
+      };
+    });
+
+    // 车辆维修频率统计
+    const vehicleRepairStats = {
+      timeRange,
+      startDate: startDate || new Date(new Date().getFullYear(), new Date().getMonth() - 1, new Date().getDate()).toISOString().split('T')[0],
+      endDate: endDate || new Date().toISOString().split('T')[0],
+      totalRepairs,
+      vehicleCount,
+      averageRepairsPerVehicle: parseFloat(averageRepairsPerVehicle.toFixed(2)),
+      repairsByMake,
+      repairsByVehicleAge,
+      mostCommonIssues,
+      repairTrend,
+      seasonalFactors
+    };
+    
+    logger.info(`管理员查询了车辆维修统计报表`);
+    
+    ctx.body = {
+      status: 'success',
+      data: vehicleRepairStats
+    };
+  } catch (error) {
+    logger.error('获取车辆维修统计失败:', error);
+    throw createError.internal('获取车辆维修统计失败');
+  }
 };
 
 module.exports = {

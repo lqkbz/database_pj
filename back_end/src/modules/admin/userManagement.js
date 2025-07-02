@@ -1,5 +1,7 @@
 const { createError } = require('../../middleware/errorhandler');
 const { createLogger } = require('../../middleware/logger');
+const { User, Vehicle, WorkOrder } = require('../../models');
+const { Op } = require('sequelize');
 
 const logger = createLogger('AdminUserManagement');
 
@@ -29,11 +31,11 @@ const logger = createLogger('AdminUserManagement');
  *           type: string
  *         description: 搜索关键词
  *       - in: query
- *         name: status
+ *         name: role
  *         schema:
  *           type: string
- *           enum: [active, inactive]
- *         description: 用户状态过滤
+ *           enum: [customer, mechanic, admin]
+ *         description: 用户角色过滤
  *     security:
  *       - bearerAuth: []
  *     responses:
@@ -62,77 +64,71 @@ const logger = createLogger('AdminUserManagement');
  *         description: 无权访问
  */
 const listUsers = async (ctx) => {
-  const { page = 1, limit = 10, search, status } = ctx.query;
+  const { page = 1, limit = 10, search, role } = ctx.query;
   
   // 构建查询条件
-  const query = {};
+  const whereClause = {};
+  
   if (search) {
-    // 实际项目中替换为搜索条件
-    query.search = search;
+    whereClause.name = {
+      [Op.like]: `%${search}%`
+    };
   }
   
-  if (status) {
-    query.status = status;
+  if (role) {
+    whereClause.role = role;
   }
   
+  try {
   // 从数据库获取用户列表
-  // 实际项目中替换为数据库查询
-  const users = [
-    {
-      id: 'user1',
-      username: 'zhangsan',
-      email: 'zhangsan@example.com',
-      fullName: '张三',
-      phone: '13800138000',
-      role: 'customer',
-      status: 'active',
-      createdAt: '2023-01-15T08:30:00Z',
-      vehicleCount: 2,
-      orderCount: 5
-    },
-    {
-      id: 'user2',
-      username: 'lisi',
-      email: 'lisi@example.com',
-      fullName: '李四',
-      phone: '13900001111',
-      role: 'customer',
-      status: 'active',
-      createdAt: '2023-02-20T14:45:00Z',
-      vehicleCount: 1,
-      orderCount: 3
-    },
-    {
-      id: 'user3',
-      username: 'wangwu',
-      email: 'wangwu@example.com',
-      fullName: '王五',
-      phone: '13700002222',
-      role: 'customer',
-      status: 'inactive',
-      createdAt: '2023-03-10T11:20:00Z',
-      vehicleCount: 0,
-      orderCount: 0
-    }
-  ];
-  
-  // 计算总用户数
-  const total = users.length;
+    const { count, rows: users } = await User.findAndCountAll({
+      where: whereClause,
+      include: [
+        {
+          model: Vehicle,
+          as: 'vehicles',
+          attributes: ['vehicle_id']
+        },
+        {
+          model: WorkOrder,
+          as: 'customerOrders',
+          attributes: ['order_id']
+        }
+      ],
+      attributes: ['user_id', 'name', 'role', 'created_at'],
+      offset: (page - 1) * limit,
+      limit: parseInt(limit),
+      order: [['created_at', 'DESC']]
+    });
+
+    // 处理用户数据，添加统计信息
+    const processedUsers = users.map(user => ({
+      id: user.user_id,
+      name: user.name,
+      role: user.role,
+      createdAt: user.created_at,
+      vehicleCount: user.vehicles ? user.vehicles.length : 0,
+      orderCount: user.customerOrders ? user.customerOrders.length : 0
+    }));
   
   logger.info(`管理员查询了用户列表，返回 ${users.length} 条记录`);
   
   ctx.body = {
     status: 'success',
     data: {
-      users,
+        users: processedUsers,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / parseInt(limit))
+          total: count,
+          pages: Math.ceil(count / parseInt(limit))
+        }
       }
+    };
+  } catch (error) {
+    logger.error('获取用户列表失败:', error);
+    throw createError.internal('获取用户列表失败');
     }
-  };
 };
 
 /**
@@ -177,65 +173,66 @@ const listUsers = async (ctx) => {
 const getUserDetail = async (ctx) => {
   const userId = ctx.params.id;
   
+  try {
   // 从数据库获取用户详情
-  // 实际项目中替换为数据库查询
-  const user = {
-    id: userId,
-    username: 'zhangsan',
-    email: 'zhangsan@example.com',
-    fullName: '张三',
-    phone: '13800138000',
-    address: '北京市朝阳区XX街XX号',
-    role: 'customer',
-    status: 'active',
-    createdAt: '2023-01-15T08:30:00Z',
-    lastLogin: '2023-05-20T09:45:00Z',
-    vehicles: [
-      {
-        id: 'v1',
-        make: '丰田',
-        model: '卡罗拉',
-        licensePlate: '京A12345',
-        year: 2020
+    const user = await User.findByPk(userId, {
+      include: [
+        {
+          model: Vehicle,
+          as: 'vehicles',
+          attributes: ['vehicle_id', 'make', 'model', 'plate_no', 'year']
       },
       {
-        id: 'v2',
-        make: '本田',
-        model: '思域',
-        licensePlate: '京B67890',
-        year: 2019
-      }
-    ],
-    recentOrders: [
-      {
-        id: 'wo1',
-        description: '发动机异响，怠速不稳',
-        status: 'completed',
-        createdAt: '2023-04-15T08:30:00Z',
-        completedAt: '2023-04-16T15:45:00Z'
-      },
-      {
-        id: 'wo2',
-        description: '更换刹车片，更换机油',
-        status: 'in_progress',
-        createdAt: '2023-05-10T09:15:00Z'
-      }
-    ]
-  };
+          model: WorkOrder,
+          as: 'customerOrders',
+          attributes: ['order_id', 'description', 'status', 'created_at', 'finished_at'],
+          order: [['created_at', 'DESC']],
+          limit: 10
+        }
+      ],
+      attributes: ['user_id', 'name', 'role', 'created_at']
+    });
   
-  // 检查用户是否存在
   if (!user) {
     throw createError.notFound('用户不存在');
   }
+
+    const userDetail = {
+      id: user.user_id,
+      name: user.name,
+      role: user.role,
+      createdAt: user.created_at,
+      vehicles: user.vehicles.map(vehicle => ({
+        id: vehicle.vehicle_id,
+        make: vehicle.make,
+        model: vehicle.model,
+        licensePlate: vehicle.plate_no,
+        year: vehicle.year
+      })),
+      recentOrders: user.customerOrders.map(order => ({
+        id: order.order_id,
+        description: order.description,
+        status: order.status,
+        createdAt: order.created_at,
+        completedAt: order.finished_at
+      }))
+    };
   
   logger.info(`管理员查看了用户 ${userId} 的详细信息`);
   
   ctx.body = {
     status: 'success',
     data: {
-      user
+        user: userDetail
     }
   };
+  } catch (error) {
+    if (error.status) {
+      throw error;
+    }
+    logger.error(`获取用户详情失败 (ID: ${userId}):`, error);
+    throw createError.internal('获取用户详情失败');
+  }
 };
 
 /**
@@ -259,23 +256,9 @@ const getUserDetail = async (ctx) => {
  *           schema:
  *             type: object
  *             properties:
- *               fullName:
+ *               name:
  *                 type: string
- *                 description: 用户全名
- *               phone:
- *                 type: string
- *                 description: 电话号码
- *               address:
- *                 type: string
- *                 description: 地址
- *               email:
- *                 type: string
- *                 format: email
- *                 description: 电子邮件
- *               status:
- *                 type: string
- *                 enum: [active, inactive, suspended]
- *                 description: 用户状态
+ *                 description: 用户姓名
  *               role:
  *                 type: string
  *                 enum: [customer, mechanic, admin]
@@ -311,21 +294,16 @@ const updateUser = async (ctx) => {
   const userId = ctx.params.id;
   const updateData = ctx.request.body;
   
-  // 获取用户信息（从数据库）
-  // 实际项目中替换为数据库查询
-  const user = {
-    id: userId,
-    username: 'zhangsan',
-    status: 'active'
-  };
+  try {
+    // 获取用户信息
+    const user = await User.findByPk(userId);
   
-  // 检查用户是否存在
   if (!user) {
     throw createError.notFound('用户不存在');
   }
   
   // 验证更新数据
-  const allowedFields = ['fullName', 'phone', 'address', 'email', 'status', 'role'];
+    const allowedFields = ['name', 'role'];
   const updates = {};
   
   Object.keys(updateData).forEach(key => {
@@ -339,30 +317,34 @@ const updateUser = async (ctx) => {
   }
   
   // 特殊字段验证
-  if (updates.status && !['active', 'inactive', 'suspended'].includes(updates.status)) {
-    throw createError.validation('无效的状态值');
-  }
-  
   if (updates.role && !['customer', 'mechanic', 'admin'].includes(updates.role)) {
     throw createError.validation('无效的角色值');
   }
   
-  // 更新用户信息（在数据库中）
-  // 实际项目中替换为数据库更新操作
+    // 更新用户信息
+    await user.update(updates);
   
-  // 记录信息
-  logger.info(`管理员更新了用户 ${userId} 的信息`);
+    logger.info(`管理员更新了用户 ${userId} 的信息:`, updates);
   
   ctx.body = {
     status: 'success',
     message: '用户信息已更新',
     data: {
       user: {
-        ...user,
-        ...updates
+          id: user.user_id,
+          name: user.name,
+          role: user.role,
+          createdAt: user.created_at
       }
     }
   };
+  } catch (error) {
+    if (error.status) {
+      throw error;
+    }
+    logger.error(`更新用户信息失败 (ID: ${userId}):`, error);
+    throw createError.internal('更新用户信息失败');
+  }
 };
 
 module.exports = {

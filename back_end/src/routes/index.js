@@ -12,6 +12,12 @@ const { router: systemRouter } = require('./system');
 const { authMiddleware } = require('../middleware/auth');
 const { requireRole } = require('../middleware/rbac');
 
+// 处理favicon.ico请求，避免404错误
+router.get('/favicon.ico', async (ctx) => {
+  // 返回204 No Content，避免404错误
+  ctx.status = 204;
+});
+
 // 注册认证路由（不需要认证）
 router.use(authRouter.routes(), authRouter.allowedMethods());
 
